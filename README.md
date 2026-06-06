@@ -298,6 +298,7 @@ The reusable workflow uses:
 - `concurrency` scoped by repository, ref, and selected package dimensions.
 - Artifact attestation through `actions/attest`.
 - Lifecycle hooks for application-specific signing and SBOM generation.
+- Policy validation for required signing and SBOM hooks: `security.signingRequired` requires `lifecycle.sign`, and `security.sbomRequired` requires `lifecycle.sbom`.
 - A declarative lifecycle contract so application repositories do not copy release pipeline YAML.
 - Path validation for config paths and output globs.
 - Secret-like value redaction in framework logs.

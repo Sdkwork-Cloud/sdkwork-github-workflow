@@ -138,6 +138,47 @@ test('rejects dynamic uses steps in lifecycle config', () => {
   assert.ok(issues.some((issue) => issue.includes('lifecycle.build[0].uses is not supported')));
 });
 
+test('enforces required signing and SBOM security lifecycle policies', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'secure-app', repository: 'Org/secure-app' },
+    release: { artifactPrefix: 'secure-app' },
+    lifecycle: {
+      package: [{ run: 'echo package' }],
+    },
+    targets: [
+      {
+        id: 'linux-x64-server-tgz',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+      {
+        id: 'windows-x64-desktop-msi',
+        profile: 'desktop',
+        platform: 'windows',
+        architecture: 'x64',
+        formats: ['msi'],
+        runner: 'windows-2022',
+        outputGlobs: ['dist/*.msi'],
+        signing: false,
+      },
+    ],
+    security: {
+      signingRequired: true,
+      sbomRequired: true,
+    },
+  };
+
+  const issues = validateWorkflowConfig(config);
+  assert.ok(issues.some((issue) => issue.includes('security.signingRequired requires lifecycle.sign')));
+  assert.ok(issues.some((issue) => issue.includes('security.sbomRequired requires lifecycle.sbom')));
+  assert.ok(issues.some((issue) => issue.includes('targets[1].signing cannot be false')));
+});
+
 test('creates a GitHub Actions matrix filtered by platform, architecture, profile, and format', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',

@@ -148,6 +148,7 @@ The design aligns with current GitHub Actions practices:
 - Minimal explicit permissions.
 - `id-token: write` for OIDC-capable deployment actions.
 - Artifact attestations with build provenance.
+- Policy validation that turns required signing and SBOM declarations into mandatory lifecycle hooks.
 - GitHub Environments for deployment approvals, URLs, and environment-scoped secrets.
 - `concurrency` to prevent accidental overlapping releases.
 - `actions/checkout@v4`, setup actions, and artifact v4.
@@ -156,6 +157,7 @@ The design aligns with current GitHub Actions practices:
 ## Error Handling
 
 - Config validation fails before package jobs start.
+- Required signing and SBOM policies fail validation if their lifecycle hooks are missing.
 - Matrix selection fails if filters select no targets.
 - Dependency checkout fails on missing repository/path/ref.
 - Lifecycle execution stops on the first failed step.

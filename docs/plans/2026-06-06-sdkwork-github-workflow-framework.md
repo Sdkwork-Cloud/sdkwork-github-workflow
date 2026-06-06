@@ -78,9 +78,9 @@
 - [x] Document lifecycle contract.
 - [x] Document dependency contract.
 - [x] Document standards alignment.
-- [ ] Run full local verification.
-- [ ] Initialize git repository if missing.
-- [ ] Commit framework implementation.
+- [x] Run full local verification.
+- [x] Initialize git repository if missing.
+- [x] Commit framework implementation.
 
 ### Task 6: Deployment and Supply Chain Enhancements
 
@@ -100,8 +100,8 @@
 - [x] Extend reusable workflow with optional deployment jobs.
 - [x] Bind deployment jobs to GitHub Environments.
 - [x] Update examples for production deployment/store publishing.
-- [ ] Run full local verification.
-- [ ] Commit deployment enhancements.
+- [x] Run full local verification.
+- [x] Commit deployment enhancements.
 
 ### Task 7: Tablet Packaging
 
@@ -117,8 +117,8 @@
 - [x] Add `ipados`, `android-tablet`, and `windows-tablet` platforms.
 - [x] Add `msix` package format.
 - [x] Add tablet example config.
-- [ ] Run full local verification.
-- [ ] Commit tablet packaging enhancements.
+- [x] Run full local verification.
+- [x] Commit tablet packaging enhancements.
 
 ### Task 8: Application Bootstrap Generator
 
@@ -135,3 +135,18 @@
 - [x] Validate generated config in repository validation.
 - [x] Run full local verification.
 - [x] Commit bootstrap generator enhancement.
+
+### Task 9: Required Supply Chain Policy Validation
+
+**Files:**
+- Modify: `scripts/sdkwork-workflow.mjs`
+- Modify: `tests/sdkwork-workflow.test.mjs`
+- Modify: `README.md`
+- Modify: `docs/design/sdkwork-github-workflow-framework.md`
+
+- [x] Write failing tests for required signing and SBOM policy enforcement.
+- [x] Require `lifecycle.sign` when `security.signingRequired` is true.
+- [x] Require `lifecycle.sbom` when `security.sbomRequired` is true.
+- [x] Reject target-level `signing: false` when signing is globally required.
+- [x] Run full local verification.
+- [x] Commit supply chain policy validation.

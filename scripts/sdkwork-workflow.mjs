@@ -362,6 +362,7 @@ function validateWorkflowConfig(config) {
   if (config.security !== undefined) {
     validateSecurity(config.security, issues);
   }
+  validateSecurityPolicy(config, issues);
   if (config.publish !== undefined) {
     validatePublish(config.publish, issues);
   }
@@ -505,6 +506,28 @@ function validateSecurity(security, issues) {
       issues.push(`security.${key} must be a boolean`);
     }
   }
+}
+
+function validateSecurityPolicy(config, issues) {
+  if (config.security?.signingRequired === true) {
+    if (!hasLifecycleSteps(config.lifecycle?.sign)) {
+      issues.push('security.signingRequired requires lifecycle.sign steps');
+    }
+    if (Array.isArray(config.targets)) {
+      config.targets.forEach((target, index) => {
+        if (target?.signing === false) {
+          issues.push(`targets[${index}].signing cannot be false when security.signingRequired is true`);
+        }
+      });
+    }
+  }
+  if (config.security?.sbomRequired === true && !hasLifecycleSteps(config.lifecycle?.sbom)) {
+    issues.push('security.sbomRequired requires lifecycle.sbom steps');
+  }
+}
+
+function hasLifecycleSteps(steps) {
+  return Array.isArray(steps) && steps.length > 0;
 }
 
 function validatePublish(publish, issues) {
