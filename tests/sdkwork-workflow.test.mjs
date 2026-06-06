@@ -690,6 +690,90 @@ test('renders release notes from sdkwork app manifest notes before git fallback'
   assert.match(notes.content, /windows-x64-desktop-msi/u);
 });
 
+test('does not use stale current app manifest notes for a different release version', async () => {
+  const root = path.join(tempRoot, 'stale-manifest-release-notes');
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+  await writeFile(
+    path.join(root, 'sdkwork.app.config.json'),
+    JSON.stringify({
+      schemaVersion: 3,
+      kind: 'sdkwork.app',
+      app: {
+        key: 'demo-app',
+        name: 'Demo App',
+      },
+      release: {
+        notes: [
+          {
+            version: '1.0.0',
+            title: 'Demo App 1.0.0',
+            summary: 'Old release note that must not be reused.',
+            current: true,
+          },
+        ],
+      },
+    }, null, 2),
+  );
+
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: {
+      id: 'demo-app',
+      name: 'Demo App',
+      repository: 'Org/demo-app',
+      sourcePath: '.',
+      configPath: 'sdkwork.app.config.json',
+    },
+    release: {
+      artifactPrefix: 'demo-app',
+      defaultVersion: '2.0.0',
+      changelog: {
+        source: 'auto',
+      },
+    },
+    targets: [
+      {
+        id: 'linux-x64-server-tar-gz',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+    ],
+  };
+
+  const notes = await createReleaseNotes(config, {
+    root,
+    version: '2.0.0',
+    releaseTag: 'v2.0.0',
+  });
+
+  assert.equal(notes.source, 'git');
+  assert.match(notes.content, /^# Demo App v2\.0\.0/u);
+  assert.doesNotMatch(notes.content, /Demo App 1\.0\.0/u);
+  assert.doesNotMatch(notes.content, /Old release note/u);
+
+  await assert.rejects(
+    () => createReleaseNotes({
+      ...config,
+      release: {
+        ...config.release,
+        changelog: {
+          source: 'app-manifest',
+        },
+      },
+    }, {
+      root,
+      version: '2.0.0',
+      releaseTag: 'v2.0.0',
+    }),
+    /No matching release\.notes entry/u,
+  );
+});
+
 test('renders release notes from configured changelog file', async () => {
   const root = path.join(tempRoot, 'file-release-notes');
   await rm(root, { recursive: true, force: true });

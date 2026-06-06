@@ -1389,6 +1389,13 @@ async function resolveExistingAppManifestPath(config, root) {
 function findAppManifestReleaseNote(notes, context) {
   const version = normalizeReleaseVersion(context.version);
   const tagVersion = normalizeReleaseVersion(context.releaseTag);
+  const requestedVersions = new Set([version, tagVersion].filter(Boolean));
+  if (requestedVersions.size > 0) {
+    return notes.find((note) => {
+      const noteVersion = normalizeReleaseVersion(note?.version);
+      return noteVersion && requestedVersions.has(noteVersion);
+    }) ?? null;
+  }
   return notes.find((note) => {
     const noteVersion = normalizeReleaseVersion(note?.version);
     return noteVersion && (noteVersion === version || noteVersion === tagVersion);
