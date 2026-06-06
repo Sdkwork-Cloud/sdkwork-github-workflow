@@ -11,7 +11,10 @@
     "artifactPrefix": "clawrouter",
     "defaultVersion": "0.3.0",
     "versionInput": "package_version",
-    "tagInput": "tag"
+    "tagInput": "tag",
+    "changelog": {
+      "source": "auto"
+    }
   },
   "dependencies": [
     {

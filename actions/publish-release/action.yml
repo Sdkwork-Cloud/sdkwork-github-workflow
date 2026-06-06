@@ -14,6 +14,10 @@ inputs:
     required: false
     default: 'true'
     description: Whether to overwrite existing release assets.
+  notes-file:
+    required: false
+    default: ''
+    description: Markdown file used as GitHub Release notes.
 runs:
   using: composite
   steps:
@@ -23,11 +27,13 @@ runs:
         SDKWORK_RELEASE_REPOSITORY: ${{ inputs.repository }}
         SDKWORK_RELEASE_FILES: ${{ inputs.files }}
         SDKWORK_RELEASE_CLOBBER: ${{ inputs.clobber }}
+        SDKWORK_RELEASE_NOTES_FILE: ${{ inputs.notes-file }}
       run: |
         $ErrorActionPreference = "Stop"
         $tag = $env:SDKWORK_RELEASE_TAG
         $repo = $env:SDKWORK_RELEASE_REPOSITORY
         $clobber = $env:SDKWORK_RELEASE_CLOBBER
+        $notesFile = $env:SDKWORK_RELEASE_NOTES_FILE
         if (-not $tag) {
           throw "Release tag is required"
         }
@@ -44,9 +50,16 @@ runs:
         if ($files.Count -eq 0) {
           throw "No files matched release upload inputs"
         }
+        $hasNotesFile = $notesFile -and (Test-Path -LiteralPath $notesFile -PathType Leaf)
         gh release view $tag --repo $repo *> $null
         if ($LASTEXITCODE -ne 0) {
-          gh release create $tag --repo $repo --title $tag --notes "Automated SDKWork package release."
+          if ($hasNotesFile) {
+            gh release create $tag --repo $repo --title $tag --notes-file $notesFile
+          } else {
+            gh release create $tag --repo $repo --title $tag --notes "Automated SDKWork package release."
+          }
+        } elseif ($hasNotesFile) {
+          gh release edit $tag --repo $repo --notes-file $notesFile
         }
         foreach ($file in $files) {
           $ghArgs = @("release", "upload", $tag, $file.FullName, "--repo", $repo)

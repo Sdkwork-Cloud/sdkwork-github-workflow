@@ -66,6 +66,33 @@
         "channelInput": {
           "type": "string",
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "changelog": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "GitHub Release notes and changelog generation policy.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "source": {
+              "enum": ["auto", "app-manifest", "file", "git", "none"],
+              "description": "auto reads sdkwork.app.config.json release.notes, then CHANGELOG.md, then git commit subjects."
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Safe relative changelog markdown path when source is file."
+            },
+            "includeCommitSubjects": {
+              "type": "boolean"
+            },
+            "maxCommitSubjects": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
         }
       }
     },

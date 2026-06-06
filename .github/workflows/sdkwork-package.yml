@@ -343,6 +343,31 @@ jobs:
         with:
           subject-path: ${{ matrix.outputGlobsText }}
 
+      - id: changelog
+        name: Render release changelog
+        if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease }}
+        shell: bash
+        env:
+          SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
+          SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
+          SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
+          SDKWORK_FILTER_FORMAT: ${{ inputs.format }}
+          SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
+          SDKWORK_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs changelog \
+            --config "${SDKWORK_CONFIG_PATH}" \
+            --platform "${SDKWORK_FILTER_PLATFORM}" \
+            --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
+            --profile "${SDKWORK_FILTER_PROFILE}" \
+            --format "${SDKWORK_FILTER_FORMAT}" \
+            --version "${SDKWORK_PACKAGE_VERSION}" \
+            --release-tag "${SDKWORK_RELEASE_TAG}" \
+            --output .sdkwork/release/release-notes.md \
+            --github-output
+
       - name: Upload assets to GitHub Release
         if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease }}
         uses: ./.sdkwork/github-workflow/actions/publish-release
@@ -350,6 +375,7 @@ jobs:
           tag: ${{ inputs.tag || github.ref_name }}
           repository: ${{ github.repository }}
           files: ${{ matrix.outputGlobsText }}
+          notes-file: ${{ steps.changelog.outputs.notes_path }}
           clobber: 'true'
         env:
           GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}

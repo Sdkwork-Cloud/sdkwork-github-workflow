@@ -88,7 +88,7 @@ const ROOT_CONFIG_KEYS = Object.freeze([
   'deployments',
 ]);
 const APP_CONFIG_KEYS = Object.freeze(['id', 'name', 'repository', 'sourcePath', 'configPath']);
-const RELEASE_CONFIG_KEYS = Object.freeze(['artifactPrefix', 'defaultVersion', 'versionInput', 'tagInput', 'channelInput']);
+const RELEASE_CONFIG_KEYS = Object.freeze(['artifactPrefix', 'defaultVersion', 'versionInput', 'tagInput', 'channelInput', 'changelog']);
 const DEPENDENCY_CONFIG_KEYS = Object.freeze(['id', 'repository', 'ref', 'refInput', 'path', 'tokenSecret', 'submodules']);
 const TOOLCHAIN_CONFIG_KEYS = Object.freeze(['node', 'pnpm', 'python', 'java', 'go', 'rust', 'flutter', 'dotnet', 'android', 'xcode', 'wix']);
 const TOOLCHAIN_STRING_KEYS = Object.freeze(['node', 'pnpm', 'python', 'java', 'go', 'rust', 'flutter', 'dotnet', 'wix']);
@@ -98,6 +98,8 @@ const TARGET_CONFIG_KEYS = Object.freeze(['id', 'packageId', 'profile', 'platfor
 const SECURITY_CONFIG_KEYS = Object.freeze(['oidcRequired', 'artifactAttestations', 'sbomRequired', 'signingRequired']);
 const PUBLISH_CONFIG_KEYS = Object.freeze(['workflowArtifact', 'githubRelease', 'retentionDays']);
 const DEPLOYMENT_CONFIG_KEYS = Object.freeze(['id', 'environment', 'url', 'runner', 'profile', 'platform', 'architecture', 'format', 'targetId', 'packageId', 'lifecycle']);
+const CHANGELOG_CONFIG_KEYS = Object.freeze(['enabled', 'source', 'path', 'includeCommitSubjects', 'maxCommitSubjects']);
+const SUPPORTED_CHANGELOG_SOURCES = Object.freeze(['auto', 'app-manifest', 'file', 'git', 'none']);
 const FRAMEWORK_CHECKOUT_PATH = '.sdkwork/github-workflow';
 
 function printHelp() {
@@ -109,6 +111,7 @@ Commands:
   deployments    Render deployment matrix from selected package targets.
   dependencies   Render dependency checkout metadata.
   toolchains     Render declared toolchain setup metadata.
+  changelog      Render release changelog / GitHub Release notes.
   lifecycle      Render one lifecycle phase execution plan.
   init-app       Generate sdkwork.workflow.json and package workflow for an app.
 
@@ -127,6 +130,7 @@ Options:
   --deploy-url <value>   Deployment URL exposed to lifecycle steps.
   --deploy-lifecycle <value>
                          Deployment lifecycle label exposed to lifecycle steps.
+  --output <path>         Output path for changelog command.
   --dependency-refs-json <json>
                          JSON object mapping dependency ref input names to refs.
   --dependency-refs-file <path>
@@ -162,6 +166,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     deployEnvironment: null,
     deployUrl: null,
     deployLifecycle: null,
+    outputPath: '.sdkwork/release/release-notes.md',
     dependencyRefsJson: null,
     dependencyRefsFile: null,
     root: '.',
@@ -227,6 +232,10 @@ function parseArgs(argv = process.argv.slice(2)) {
         break;
       case '--deploy-lifecycle':
         settings.deployLifecycle = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--output':
+        settings.outputPath = requireValue(argv, index, arg);
         index += 1;
         break;
       case '--dependency-refs-json':
@@ -397,6 +406,9 @@ function validateWorkflowConfig(config) {
   validateOptionalString(config.release?.channelInput, 'release.channelInput', issues, {
     pattern: /^[A-Za-z_][A-Za-z0-9_]*$/u,
   });
+  if (config.release?.changelog !== undefined) {
+    validateChangelog(config.release.changelog, issues);
+  }
 
   if (config.dependencies !== undefined) {
     validateArray(config.dependencies, 'dependencies', issues);
@@ -785,6 +797,31 @@ function validatePublish(publish, issues) {
   if (publish?.retentionDays !== undefined) {
     if (!Number.isInteger(publish.retentionDays) || publish.retentionDays < 1 || publish.retentionDays > 90) {
       issues.push('publish.retentionDays must be an integer from 1 to 90');
+    }
+  }
+}
+
+function validateChangelog(changelog, issues) {
+  validateObject(changelog, 'release.changelog', issues);
+  validateKnownProperties(changelog, 'release.changelog', CHANGELOG_CONFIG_KEYS, issues);
+  if (changelog?.enabled !== undefined && typeof changelog.enabled !== 'boolean') {
+    issues.push('release.changelog.enabled must be a boolean');
+  }
+  if (changelog?.source !== undefined) {
+    validateEnum(changelog.source, 'release.changelog.source', SUPPORTED_CHANGELOG_SOURCES, issues);
+  }
+  if (changelog?.path !== undefined) {
+    validateOptionalSafeRelativePath(changelog.path, 'release.changelog.path', issues);
+  }
+  if (changelog?.source === 'file' && typeof changelog.path !== 'string') {
+    issues.push('release.changelog.path is required when release.changelog.source is file');
+  }
+  if (changelog?.includeCommitSubjects !== undefined && typeof changelog.includeCommitSubjects !== 'boolean') {
+    issues.push('release.changelog.includeCommitSubjects must be a boolean');
+  }
+  if (changelog?.maxCommitSubjects !== undefined) {
+    if (!Number.isInteger(changelog.maxCommitSubjects) || changelog.maxCommitSubjects < 1 || changelog.maxCommitSubjects > 200) {
+      issues.push('release.changelog.maxCommitSubjects must be an integer from 1 to 200');
     }
   }
 }
@@ -1194,6 +1231,222 @@ function createWorkflowSummary(config, matrix, { version = null } = {}) {
   };
 }
 
+async function createReleaseNotes(config, {
+  root = process.cwd(),
+  version = null,
+  releaseTag = null,
+  filters = {},
+} = {}) {
+  const issues = validateWorkflowConfig(config);
+  if (issues.length > 0) {
+    throw new Error(`Invalid workflow config: ${issues.join('; ')}`);
+  }
+
+  const changelog = config.release?.changelog ?? {};
+  const configuredSource = changelog.enabled === false ? 'none' : changelog.source ?? 'auto';
+  const resolvedVersion = version || config.release.defaultVersion || normalizeReleaseVersion(releaseTag) || '';
+  const releaseLabel = releaseTag || resolvedVersion || 'release';
+  const matrix = createPackageMatrix(config, filters);
+  const context = {
+    appName: config.app.name ?? config.app.id,
+    releaseLabel,
+    version: resolvedVersion,
+    releaseTag,
+    packageItems: matrix.include,
+  };
+
+  if (configuredSource === 'none') {
+    return renderGenericReleaseNotes(context, { source: 'none', includeCommits: false, commits: [] });
+  }
+
+  if (configuredSource === 'file') {
+    const fileNotes = await renderFileReleaseNotes(config, context, { root, path: changelog.path });
+    return fileNotes;
+  }
+
+  if (configuredSource === 'app-manifest') {
+    const manifestNotes = await renderAppManifestReleaseNotes(config, context, { root });
+    if (!manifestNotes) {
+      throw new Error(`No matching release.notes entry found in ${config.app.configPath ?? 'sdkwork.app.config.json'} for ${resolvedVersion || releaseLabel}`);
+    }
+    return manifestNotes;
+  }
+
+  if (configuredSource === 'auto') {
+    const manifestNotes = await renderAppManifestReleaseNotes(config, context, { root });
+    if (manifestNotes) {
+      return manifestNotes;
+    }
+    const defaultChangelogPath = path.resolve(root, 'CHANGELOG.md');
+    if (existsSync(defaultChangelogPath)) {
+      return renderFileReleaseNotes(config, context, { root, path: 'CHANGELOG.md' });
+    }
+  }
+
+  const includeCommits = changelog.includeCommitSubjects !== false;
+  const maxCommits = changelog.maxCommitSubjects ?? 50;
+  const commits = includeCommits ? await readGitCommitSubjects(root, { maxCommits }) : [];
+  return renderGenericReleaseNotes(context, {
+    source: 'git',
+    includeCommits,
+    commits,
+  });
+}
+
+async function renderAppManifestReleaseNotes(config, context, { root }) {
+  const manifestPath = await resolveExistingAppManifestPath(config, root);
+  if (!manifestPath) {
+    return null;
+  }
+  const manifest = parseJsonObject(await readFile(manifestPath, 'utf8'), 'sdkwork app config');
+  const notes = Array.isArray(manifest.release?.notes) ? manifest.release.notes : [];
+  if (notes.length === 0) {
+    return null;
+  }
+  const note = findAppManifestReleaseNote(notes, context);
+  if (!note) {
+    return null;
+  }
+  const appName = manifest.app?.displayName ?? manifest.app?.name ?? context.appName;
+  const title = stringOrEmpty(note.title) || `${appName} ${context.releaseLabel}`;
+  const lines = [`# ${title}`, ''];
+  appendNonEmptyParagraph(lines, note.summary);
+  appendNonEmptyParagraph(lines, note.content);
+  if (Array.isArray(note.highlights) && note.highlights.length > 0) {
+    lines.push('## Highlights', '');
+    note.highlights
+      .map((highlight) => String(highlight ?? '').trim())
+      .filter(Boolean)
+      .forEach((highlight) => lines.push(`- ${highlight}`));
+    lines.push('');
+  }
+  appendPackageSummary(lines, context.packageItems);
+  return {
+    source: 'app-manifest',
+    path: manifestPath,
+    content: `${trimTrailingBlankLines(lines).join('\n')}\n`,
+  };
+}
+
+async function renderFileReleaseNotes(config, context, { root, path: notesPath }) {
+  if (!notesPath) {
+    throw new Error('release.changelog.path is required for file changelog source');
+  }
+  if (!isSafeRelativePath(notesPath, { allowDot: false })) {
+    throw new Error('release.changelog.path must be a safe relative path');
+  }
+  const absolutePath = path.resolve(root, notesPath);
+  if (!existsSync(absolutePath)) {
+    throw new Error(`Release changelog file does not exist: ${notesPath}`);
+  }
+  const fileContent = await readFile(absolutePath, 'utf8');
+  const lines = [`# ${context.appName} ${context.releaseLabel}`, '', fileContent.trim(), ''];
+  appendPackageSummary(lines, context.packageItems);
+  return {
+    source: 'file',
+    path: absolutePath,
+    content: `${trimTrailingBlankLines(lines).join('\n')}\n`,
+  };
+}
+
+function renderGenericReleaseNotes(context, { source, includeCommits, commits }) {
+  const lines = [`# ${context.appName} ${context.releaseLabel}`, '', 'Automated SDKWork package release.', ''];
+  if (includeCommits) {
+    lines.push('## Changes', '');
+    if (commits.length > 0) {
+      commits.forEach((commit) => lines.push(`- ${commit}`));
+    } else {
+      lines.push('No commit subjects were available for this release.');
+    }
+    lines.push('');
+  }
+  appendPackageSummary(lines, context.packageItems);
+  return {
+    source,
+    path: null,
+    content: `${trimTrailingBlankLines(lines).join('\n')}\n`,
+  };
+}
+
+async function resolveExistingAppManifestPath(config, root) {
+  const candidates = [
+    config.app.configPath,
+    path.join(config.app.sourcePath ?? '.', 'sdkwork.app.config.json'),
+    'sdkwork.app.config.json',
+  ].filter(Boolean);
+  for (const candidate of unique(candidates.map((value) => String(value).replaceAll('\\', '/')))) {
+    if (!isSafeRelativePath(candidate, { allowDot: false })) {
+      continue;
+    }
+    const absolutePath = path.resolve(root, candidate);
+    if (existsSync(absolutePath)) {
+      return absolutePath;
+    }
+  }
+  return null;
+}
+
+function findAppManifestReleaseNote(notes, context) {
+  const version = normalizeReleaseVersion(context.version);
+  const tagVersion = normalizeReleaseVersion(context.releaseTag);
+  return notes.find((note) => {
+    const noteVersion = normalizeReleaseVersion(note?.version);
+    return noteVersion && (noteVersion === version || noteVersion === tagVersion);
+  }) ?? notes.find((note) => note?.current === true) ?? notes[0] ?? null;
+}
+
+function normalizeReleaseVersion(value) {
+  return String(value ?? '').trim().replace(/^refs\/tags\//u, '').replace(/^v(?=\d)/u, '');
+}
+
+function appendNonEmptyParagraph(lines, value) {
+  const text = String(value ?? '').trim();
+  if (text) {
+    lines.push(text, '');
+  }
+}
+
+function appendPackageSummary(lines, packageItems) {
+  lines.push('## Packages', '');
+  packageItems.forEach((item) => {
+    const platform = item.distribution ? `${item.platform}/${item.distribution}` : item.platform;
+    lines.push(`- ${item.packageId} (${platform}, ${item.architecture}, ${item.profile}, ${item.format})`);
+  });
+  lines.push('');
+}
+
+function trimTrailingBlankLines(lines) {
+  const result = [...lines];
+  while (result.length > 0 && result[result.length - 1] === '') {
+    result.pop();
+  }
+  return result;
+}
+
+function readGitCommitSubjects(root, { maxCommits }) {
+  const limit = String(Math.max(1, Math.min(maxCommits, 200)));
+  return new Promise((resolve) => {
+    const child = spawn('git', ['log', `--max-count=${limit}`, '--pretty=format:%s'], {
+      cwd: root,
+      windowsHide: true,
+    });
+    let stdout = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.on('error', () => {
+      resolve([]);
+    });
+    child.on('close', (exitCode) => {
+      if (exitCode !== 0) {
+        resolve([]);
+        return;
+      }
+      resolve(stdout.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean));
+    });
+  });
+}
+
 function createLifecyclePlan(config, {
   phase,
   matrixItem,
@@ -1447,6 +1700,9 @@ function createInitialWorkflowConfig({ appId, appName, repository, profiles }) {
     release: {
       artifactPrefix: appId,
       defaultVersion: '0.1.0',
+      changelog: {
+        source: 'auto',
+      },
     },
     toolchains: defaultToolchainsForProfiles(profiles),
     lifecycle: {
@@ -1816,6 +2072,33 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     return 0;
   }
 
+  if (settings.command === 'changelog') {
+    if (!isSafeRelativePath(settings.outputPath, { allowDot: false })) {
+      throw new Error('--output must be a safe relative path');
+    }
+    const notes = await createReleaseNotes(config, {
+      root: process.cwd(),
+      version: settings.version,
+      releaseTag: settings.releaseTag,
+      filters: settings,
+    });
+    const absoluteOutputPath = path.resolve(settings.outputPath);
+    await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
+    await writeFile(absoluteOutputPath, notes.content, 'utf8');
+    if (settings.githubOutput) {
+      await writeGithubOutputs({
+        notes_path: settings.outputPath,
+        notes_source: notes.source,
+      }, env);
+    }
+    if (settings.json) {
+      console.log(JSON.stringify({ ok: true, path: settings.outputPath, source: notes.source }, null, 2));
+    } else {
+      console.log(`[sdkwork-workflow] changelog: ${settings.outputPath} (${notes.source})`);
+    }
+    return 0;
+  }
+
   if (settings.command === 'deployments') {
     const packageMatrix = createPackageMatrix(config, settings);
     const deploymentMatrix = createDeploymentMatrix(config, { packageMatrix });
@@ -1945,6 +2228,7 @@ export {
   createDeploymentMatrix,
   createLifecyclePlan,
   createPackageMatrix,
+  createReleaseNotes,
   createToolchainPlan,
   createWorkflowSummary,
   initApplicationWorkflow,

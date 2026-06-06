@@ -9,7 +9,10 @@
   },
   "release": {
     "artifactPrefix": "sdkwork-mobile-example",
-    "defaultVersion": "0.1.0"
+    "defaultVersion": "0.1.0",
+    "changelog": {
+      "source": "auto"
+    }
   },
   "toolchains": {
     "java": "21",
