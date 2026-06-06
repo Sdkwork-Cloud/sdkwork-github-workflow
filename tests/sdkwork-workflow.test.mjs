@@ -774,6 +774,87 @@ test('does not use stale current app manifest notes for a different release vers
   );
 });
 
+test('resolves package version from release tag before default version', async () => {
+  const root = path.join(tempRoot, 'tag-derived-release-version');
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+  await writeFile(
+    path.join(root, 'sdkwork.app.config.json'),
+    JSON.stringify({
+      schemaVersion: 3,
+      kind: 'sdkwork.app',
+      app: {
+        key: 'demo-app',
+        name: 'Demo App',
+      },
+      release: {
+        notes: [
+          {
+            version: '1.0.0',
+            title: 'Demo App 1.0.0',
+            summary: 'Old default release note that must not be reused for a newer tag.',
+            current: true,
+          },
+        ],
+      },
+    }, null, 2),
+  );
+
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: {
+      id: 'demo-app',
+      name: 'Demo App',
+      repository: 'Org/demo-app',
+      sourcePath: '.',
+      configPath: 'sdkwork.app.config.json',
+    },
+    release: {
+      artifactPrefix: 'demo-app',
+      defaultVersion: '1.0.0',
+      changelog: {
+        source: 'auto',
+      },
+    },
+    lifecycle: {
+      build: [{ run: 'node scripts/build.mjs' }],
+    },
+    targets: [
+      {
+        id: 'windows-x64-desktop-msi',
+        profile: 'desktop',
+        platform: 'windows',
+        architecture: 'x64',
+        formats: ['msi'],
+        runner: 'windows-2022',
+        outputGlobs: ['dist/*.msi'],
+      },
+    ],
+  };
+
+  const matrix = createPackageMatrix(config);
+  const summary = createWorkflowSummary(config, matrix, { version: '', releaseTag: 'refs/tags/v2.0.0' });
+  assert.equal(summary.version, '2.0.0');
+
+  const lifecycle = createLifecyclePlan(config, {
+    phase: 'build',
+    matrixItem: matrix.include[0],
+    version: '',
+    releaseTag: 'v2.0.0',
+    root,
+  });
+  assert.equal(lifecycle.steps[0].env.SDKWORK_PACKAGE_VERSION, '2.0.0');
+
+  const notes = await createReleaseNotes(config, {
+    root,
+    version: '',
+    releaseTag: 'v2.0.0',
+  });
+  assert.equal(notes.source, 'git');
+  assert.doesNotMatch(notes.content, /Demo App 1\.0\.0/u);
+  assert.doesNotMatch(notes.content, /Old default release note/u);
+});
+
 test('renders release notes from configured changelog file', async () => {
   const root = path.join(tempRoot, 'file-release-notes');
   await rm(root, { recursive: true, force: true });

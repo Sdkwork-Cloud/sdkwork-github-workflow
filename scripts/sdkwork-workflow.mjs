@@ -1203,7 +1203,11 @@ function stripUtf8Bom(value) {
   return String(value).replace(/^\uFEFF/u, '');
 }
 
-function createWorkflowSummary(config, matrix, { version = null } = {}) {
+function resolvePackageVersion(config, { version = null, releaseTag = null } = {}) {
+  return version || normalizeReleaseVersion(releaseTag) || config.release.defaultVersion || null;
+}
+
+function createWorkflowSummary(config, matrix, { version = null, releaseTag = null } = {}) {
   return {
     schemaVersion: SCHEMA_VERSION,
     app: {
@@ -1211,7 +1215,7 @@ function createWorkflowSummary(config, matrix, { version = null } = {}) {
       repository: config.app.repository,
       sourcePath: config.app.sourcePath ?? '.',
     },
-    version: version || config.release.defaultVersion || null,
+    version: resolvePackageVersion(config, { version, releaseTag }),
     targets: matrix.include.length,
     profiles: unique(matrix.include.map((item) => item.profile)),
     platforms: unique(matrix.include.map((item) => item.platform)),
@@ -1244,7 +1248,7 @@ async function createReleaseNotes(config, {
 
   const changelog = config.release?.changelog ?? {};
   const configuredSource = changelog.enabled === false ? 'none' : changelog.source ?? 'auto';
-  const resolvedVersion = version || config.release.defaultVersion || normalizeReleaseVersion(releaseTag) || '';
+  const resolvedVersion = resolvePackageVersion(config, { version, releaseTag }) || '';
   const releaseLabel = releaseTag || resolvedVersion || 'release';
   const matrix = createPackageMatrix(config, filters);
   const context = {
@@ -1486,7 +1490,7 @@ function createLifecyclePlan(config, {
     SDKWORK_PACKAGE_PLATFORM: matrixItem.platform,
     SDKWORK_PACKAGE_PROFILE: matrixItem.profile,
     SDKWORK_PACKAGE_TARGET_ID: matrixItem.id,
-    SDKWORK_PACKAGE_VERSION: version || config.release.defaultVersion || '',
+    SDKWORK_PACKAGE_VERSION: resolvePackageVersion(config, { version, releaseTag }) || '',
     SDKWORK_RELEASE_TAG: releaseTag || '',
     ...(matrixItem.distribution ? { SDKWORK_PACKAGE_DISTRIBUTION: matrixItem.distribution } : {}),
     ...(matrixItem.environment ? { SDKWORK_DEPLOY_ENVIRONMENT: matrixItem.environment } : {}),
@@ -2060,7 +2064,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
 
   if (settings.command === 'matrix') {
     const matrix = createPackageMatrix(config, settings);
-    const summary = createWorkflowSummary(config, matrix, { version: settings.version });
+    const summary = createWorkflowSummary(config, matrix, { version: settings.version, releaseTag: settings.releaseTag });
     if (settings.githubOutput) {
       await writeGithubOutputs({
         matrix: JSON.stringify(matrix),

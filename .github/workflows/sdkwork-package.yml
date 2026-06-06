@@ -130,6 +130,7 @@ jobs:
           SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
           SDKWORK_FILTER_FORMAT: ${{ inputs.format }}
           SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
+          SDKWORK_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs matrix \
@@ -139,6 +140,7 @@ jobs:
             --profile "${SDKWORK_FILTER_PROFILE}" \
             --format "${SDKWORK_FILTER_FORMAT}" \
             --version "${SDKWORK_PACKAGE_VERSION}" \
+            --release-tag "${SDKWORK_RELEASE_TAG}" \
             --github-output
 
       - id: dependencies
