@@ -87,7 +87,7 @@
         "name": "Build selected install package",
         "shell": "pwsh",
         "workingDirectory": "apps/sdkwork-claw-router",
-        "run": "$ErrorActionPreference = \"Stop\"\nif ($env:SDKWORK_PACKAGE_FORMAT -in @(\"deb\", \"pkg\", \"msi\")) {\n  node scripts/build-claw-router-native-installer.mjs --package-id $env:SDKWORK_PACKAGE_ID --version $env:SDKWORK_PACKAGE_VERSION --staging-root dist/install-package-staging --output-dir dist/install-packages --json\n} else {\n  node scripts/build-claw-router-install-package.mjs --package-id $env:SDKWORK_PACKAGE_ID --version $env:SDKWORK_PACKAGE_VERSION --staging-root dist/install-package-staging --output-dir dist/install-packages --json\n}"
+        "run": "$ErrorActionPreference = \"Stop\"\nif ($env:SDKWORK_PACKAGE_FORMAT -in @(\"deb\", \"rpm\", \"pkg\", \"msi\")) {\n  node scripts/build-claw-router-native-installer.mjs --package-id $env:SDKWORK_PACKAGE_ID --version $env:SDKWORK_PACKAGE_VERSION --staging-root dist/install-package-staging --output-dir dist/install-packages --json\n} else {\n  node scripts/build-claw-router-install-package.mjs --package-id $env:SDKWORK_PACKAGE_ID --version $env:SDKWORK_PACKAGE_VERSION --staging-root dist/install-package-staging --output-dir dist/install-packages --json\n}"
       }
     ],
     "validate": [
@@ -133,28 +133,37 @@
   },
   "targets": [
     {
-      "id": "linux-x64-server-deb",
-      "packageId": "linux-x64-service",
+      "id": "linux-debian-x64-server-deb",
       "profile": "server",
       "platform": "linux",
+      "distribution": "debian",
       "architecture": "x64",
       "formats": ["deb"],
       "runner": "ubuntu-24.04",
       "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
     },
     {
-      "id": "linux-arm64-server-deb",
-      "packageId": "linux-arm64-service",
+      "id": "linux-debian-arm64-server-deb",
       "profile": "server",
       "platform": "linux",
+      "distribution": "debian",
       "architecture": "arm64",
       "formats": ["deb"],
       "runner": "ubuntu-24.04-arm",
       "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
     },
     {
+      "id": "linux-rhel-x64-server-rpm",
+      "profile": "server",
+      "platform": "linux",
+      "distribution": "rhel",
+      "architecture": "x64",
+      "formats": ["rpm"],
+      "runner": "ubuntu-24.04",
+      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+    },
+    {
       "id": "windows-x64-server-msi",
-      "packageId": "windows-x64-service",
       "profile": "server",
       "platform": "windows",
       "architecture": "x64",
@@ -164,7 +173,6 @@
     },
     {
       "id": "windows-arm64-server-msi",
-      "packageId": "windows-arm64-service",
       "profile": "server",
       "platform": "windows",
       "architecture": "arm64",
@@ -174,7 +182,6 @@
     },
     {
       "id": "macos-x64-server-pkg",
-      "packageId": "macos-x64-service",
       "profile": "server",
       "platform": "macos",
       "architecture": "x64",
@@ -184,7 +191,6 @@
     },
     {
       "id": "macos-arm64-server-pkg",
-      "packageId": "macos-arm64-service",
       "profile": "server",
       "platform": "macos",
       "architecture": "arm64",
@@ -193,18 +199,26 @@
       "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
     },
     {
-      "id": "linux-x64-desktop-deb",
-      "packageId": "linux-x64-desktop",
+      "id": "linux-debian-x64-desktop-deb",
       "profile": "desktop",
       "platform": "linux",
+      "distribution": "debian",
       "architecture": "x64",
-      "formats": ["deb", "tar.gz"],
+      "formats": ["deb"],
       "runner": "ubuntu-24.04",
       "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
     },
     {
-      "id": "windows-x64-desktop-msi",
-      "packageId": "windows-x64-desktop",
+      "id": "linux-x64-desktop-tar-gz",
+      "profile": "desktop",
+      "platform": "linux",
+      "architecture": "x64",
+      "formats": ["tar.gz"],
+      "runner": "ubuntu-24.04",
+      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+    },
+    {
+      "id": "windows-x64-desktop",
       "profile": "desktop",
       "platform": "windows",
       "architecture": "x64",
@@ -213,8 +227,7 @@
       "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
     },
     {
-      "id": "macos-arm64-desktop-pkg",
-      "packageId": "macos-arm64-desktop",
+      "id": "macos-arm64-desktop",
       "profile": "desktop",
       "platform": "macos",
       "architecture": "arm64",
@@ -223,8 +236,7 @@
       "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
     },
     {
-      "id": "linux-x64-container-oci",
-      "packageId": "linux-x64-container",
+      "id": "container-x64-server",
       "profile": "server",
       "platform": "container",
       "architecture": "x64",

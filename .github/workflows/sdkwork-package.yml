@@ -124,39 +124,53 @@ jobs:
         name: Resolve package matrix
         shell: bash
         env:
+          SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
+          SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
+          SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
+          SDKWORK_FILTER_FORMAT: ${{ inputs.format }}
           SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
         run: |
           set -euo pipefail
           node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs matrix \
-            --config "${{ inputs.config_path }}" \
-            --platform "${{ inputs.platform }}" \
-            --architecture "${{ inputs.architecture }}" \
-            --profile "${{ inputs.profile }}" \
-            --format "${{ inputs.format }}" \
+            --config "${SDKWORK_CONFIG_PATH}" \
+            --platform "${SDKWORK_FILTER_PLATFORM}" \
+            --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
+            --profile "${SDKWORK_FILTER_PROFILE}" \
+            --format "${SDKWORK_FILTER_FORMAT}" \
             --version "${SDKWORK_PACKAGE_VERSION}" \
             --github-output
 
       - id: dependencies
         name: Resolve dependency checkout plan
         shell: bash
+        env:
+          SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_DEPENDENCY_REFS_JSON: ${{ inputs.dependency_refs_json }}
         run: |
           set -euo pipefail
           node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs dependencies \
-            --config "${{ inputs.config_path }}" \
-            --dependency-refs-json '${{ inputs.dependency_refs_json }}' \
+            --config "${SDKWORK_CONFIG_PATH}" \
+            --dependency-refs-json "${SDKWORK_DEPENDENCY_REFS_JSON}" \
             --github-output
 
       - id: deployments
         name: Resolve deployment matrix
         shell: bash
+        env:
+          SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
+          SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
+          SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
+          SDKWORK_FILTER_FORMAT: ${{ inputs.format }}
         run: |
           set -euo pipefail
           node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs deployments \
-            --config "${{ inputs.config_path }}" \
-            --platform "${{ inputs.platform }}" \
-            --architecture "${{ inputs.architecture }}" \
-            --profile "${{ inputs.profile }}" \
-            --format "${{ inputs.format }}" \
+            --config "${SDKWORK_CONFIG_PATH}" \
+            --platform "${SDKWORK_FILTER_PLATFORM}" \
+            --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
+            --profile "${SDKWORK_FILTER_PROFILE}" \
+            --format "${SDKWORK_FILTER_FORMAT}" \
             --github-output
 
   package:
@@ -315,22 +329,22 @@ jobs:
           release-tag: ${{ inputs.tag || github.ref_name }}
 
       - name: Upload workflow artifact
-        if: inputs.upload_artifact
+        if: ${{ inputs.upload_artifact && fromJson(needs.plan.outputs.summary_json).publish.workflowArtifact }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifactName }}-${{ inputs.tag || github.run_number }}
           path: ${{ matrix.outputGlobsText }}
           if-no-files-found: error
-          retention-days: ${{ inputs.retention_days }}
+          retention-days: ${{ fromJson(needs.plan.outputs.summary_json).publish.retentionDays || inputs.retention_days }}
 
       - name: Attest build provenance
-        if: ${{ fromJson(needs.plan.outputs.summary_json).targets > 0 }}
+        if: ${{ fromJson(needs.plan.outputs.summary_json).security.artifactAttestations }}
         uses: actions/attest@v4
         with:
           subject-path: ${{ matrix.outputGlobsText }}
 
       - name: Upload assets to GitHub Release
-        if: inputs.publish_release
+        if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease }}
         uses: ./.sdkwork/github-workflow/actions/publish-release
         with:
           tag: ${{ inputs.tag || github.ref_name }}
@@ -408,3 +422,6 @@ jobs:
           format: ${{ matrix.format }}
           version: ${{ inputs.package_version }}
           release-tag: ${{ inputs.tag || github.ref_name }}
+          deploy-environment: ${{ matrix.environment }}
+          deploy-url: ${{ matrix.url }}
+          deploy-lifecycle: ${{ matrix.lifecycle }}

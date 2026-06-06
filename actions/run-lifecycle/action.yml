@@ -46,19 +46,32 @@ runs:
   using: composite
   steps:
     - shell: bash
+      env:
+        SDKWORK_CONFIG_PATH: ${{ inputs.config-path }}
+        SDKWORK_LIFECYCLE_PHASE: ${{ inputs.phase }}
+        SDKWORK_TARGET_ID: ${{ inputs.target-id }}
+        SDKWORK_TARGET_PLATFORM: ${{ inputs.platform }}
+        SDKWORK_TARGET_ARCHITECTURE: ${{ inputs.architecture }}
+        SDKWORK_TARGET_PROFILE: ${{ inputs.profile }}
+        SDKWORK_TARGET_FORMAT: ${{ inputs.format }}
+        SDKWORK_PACKAGE_VERSION_INPUT: ${{ inputs.version }}
+        SDKWORK_RELEASE_TAG_INPUT: ${{ inputs.release-tag }}
+        SDKWORK_DEPLOY_ENVIRONMENT_INPUT: ${{ inputs.deploy-environment }}
+        SDKWORK_DEPLOY_URL_INPUT: ${{ inputs.deploy-url }}
+        SDKWORK_DEPLOY_LIFECYCLE_INPUT: ${{ inputs.deploy-lifecycle }}
       run: |
         set -euo pipefail
         node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs lifecycle \
-          --config "${{ inputs.config-path }}" \
-          --phase "${{ inputs.phase }}" \
-          --target-id "${{ inputs.target-id }}" \
-          --platform "${{ inputs.platform }}" \
-          --architecture "${{ inputs.architecture }}" \
-          --profile "${{ inputs.profile }}" \
-          --format "${{ inputs.format }}" \
-          --version "${{ inputs.version }}" \
-          --release-tag "${{ inputs.release-tag }}" \
-          --deploy-environment "${{ inputs.deploy-environment }}" \
-          --deploy-url "${{ inputs.deploy-url }}" \
-          --deploy-lifecycle "${{ inputs.deploy-lifecycle }}" \
+          --config "${SDKWORK_CONFIG_PATH}" \
+          --phase "${SDKWORK_LIFECYCLE_PHASE}" \
+          --target-id "${SDKWORK_TARGET_ID}" \
+          --platform "${SDKWORK_TARGET_PLATFORM}" \
+          --architecture "${SDKWORK_TARGET_ARCHITECTURE}" \
+          --profile "${SDKWORK_TARGET_PROFILE}" \
+          --format "${SDKWORK_TARGET_FORMAT}" \
+          --version "${SDKWORK_PACKAGE_VERSION_INPUT}" \
+          --release-tag "${SDKWORK_RELEASE_TAG_INPUT}" \
+          --deploy-environment "${SDKWORK_DEPLOY_ENVIRONMENT_INPUT}" \
+          --deploy-url "${SDKWORK_DEPLOY_URL_INPUT}" \
+          --deploy-lifecycle "${SDKWORK_DEPLOY_LIFECYCLE_INPUT}" \
           --run

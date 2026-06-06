@@ -46,7 +46,7 @@
   },
   "targets": [
     {
-      "id": "android-arm64-apk",
+      "id": "android-arm64-mobile-apk",
       "profile": "mobile",
       "platform": "android",
       "architecture": "arm64",
@@ -55,7 +55,7 @@
       "outputGlobs": ["build/app/outputs/flutter-apk/*.apk"]
     },
     {
-      "id": "android-arm64-aab",
+      "id": "android-arm64-mobile-aab",
       "profile": "mobile",
       "platform": "android",
       "architecture": "arm64",
@@ -64,7 +64,7 @@
       "outputGlobs": ["build/app/outputs/bundle/release/*.aab"]
     },
     {
-      "id": "ios-universal-ipa",
+      "id": "ios-universal-mobile-ipa",
       "profile": "mobile",
       "platform": "ios",
       "architecture": "universal",

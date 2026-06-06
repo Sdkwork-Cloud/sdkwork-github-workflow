@@ -7,6 +7,10 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "app", "release", "targets"],
   "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
     "schemaVersion": {
       "const": "2026-06-06.sdkwork.workflow.v1"
     },
@@ -44,7 +48,8 @@
       "properties": {
         "artifactPrefix": {
           "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "Lowercase kebab artifact prefix used as the first segment of every GitHub workflow artifact name."
         },
         "defaultVersion": {
           "type": "string",
@@ -93,7 +98,7 @@
           },
           "tokenSecret": {
             "type": "string",
-            "pattern": "^[A-Z_][A-Z0-9_]*$"
+            "const": "SDKWORK_RELEASE_TOKEN"
           },
           "submodules": {
             "enum": [false, true, "false", "true", "recursive"]
@@ -186,17 +191,23 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Canonical target id. Single-format targets use <platform>-<architecture>-<profile>-<format-token>, except linux deb/rpm targets use linux-<distribution>-<architecture>-<profile>-<format-token>. Multi-format targets use <platform>-<architecture>-<profile>."
           },
           "packageId": {
             "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Optional explicit package id. When present it must match the canonical package id for a single-format target."
           },
           "profile": {
             "enum": ["server", "desktop", "mobile", "tablet", "web", "worker", "library"]
           },
           "platform": {
             "enum": ["linux", "windows", "macos", "ios", "ipados", "android", "android-tablet", "windows-tablet", "web", "container"]
+          },
+          "distribution": {
+            "enum": ["debian", "ubuntu", "rhel", "centos", "fedora", "opensuse", "suse"],
+            "description": "Linux distribution family for native deb/rpm packages. Required for linux deb/rpm targets and omitted for generic linux archive formats."
           },
           "architecture": {
             "enum": ["x64", "arm64", "armv7", "universal", "wasm32", "noarch"]
@@ -346,11 +357,12 @@
           },
           "targetId": {
             "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
           },
           "packageId": {
             "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Canonical package id selector. Linux native deb/rpm package ids include the distribution segment."
           },
           "lifecycle": {
             "enum": ["deploy", "publish"]
@@ -368,7 +380,8 @@
         "required": ["run"],
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "run": {
             "type": "string"

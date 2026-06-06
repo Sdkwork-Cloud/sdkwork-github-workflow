@@ -16,8 +16,10 @@ runs:
   steps:
     - id: validate
       shell: bash
+      env:
+        SDKWORK_CONFIG_PATH: ${{ inputs.config-path }}
       run: |
         set -euo pipefail
         node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs validate \
-          --config "${{ inputs.config-path }}" \
+          --config "${SDKWORK_CONFIG_PATH}" \
           --github-output

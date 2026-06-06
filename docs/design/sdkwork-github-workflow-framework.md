@@ -149,23 +149,31 @@ The design aligns with current GitHub Actions practices:
 - Minimal explicit permissions.
 - `id-token: write` for OIDC-capable deployment actions.
 - Artifact attestations with build provenance.
+- Toolchain setup consumes every declared planner output, including .NET, Android SDK, and Xcode.
 - Policy validation that turns required signing and SBOM declarations into mandatory lifecycle hooks.
 - GitHub Environments for deployment approvals, URLs, and environment-scoped secrets.
 - `concurrency` to prevent accidental overlapping releases.
 - `actions/checkout@v4`, setup actions, and artifact v4.
 - Matrix generation in code with tests instead of duplicated YAML.
+- Shell-based actions read workflow/action inputs from environment variables before command execution.
 
 ## Error Handling
 
 - Config validation fails before package jobs start.
+- Planner validation rejects schema-declared type mismatches, empty target lists, duplicate target formats, and unsupported fields before matrix jobs are created.
 - Required signing and SBOM policies fail validation if their lifecycle hooks are missing.
 - Matrix selection fails if filters select no targets.
 - Dependency checkout fails on missing repository/path/ref.
+- Dependency checkout path overlaps with the application source or framework checkout fail validation before checkout.
+- Dependency ref JSON workflow input is passed through an environment variable before shell execution.
+- Deployment selectors that match no package target fail validation before deployment matrix generation.
 - Lifecycle execution stops on the first failed step.
 - Deployment jobs are optional and only run when the caller passes `deploy: true`.
 - Deployment jobs bind to the configured GitHub Environment.
 - Upload steps use `if-no-files-found: error`.
 - Application-specific package validation remains a mandatory lifecycle phase for production-grade apps.
+- Publication and provenance steps are driven by resolved config policy as well as caller inputs: `publish.workflowArtifact`, `publish.githubRelease`, `publish.retentionDays`, and `security.artifactAttestations` must affect the reusable workflow execution path.
+- Deployment lifecycle execution receives deployment environment, URL, and lifecycle values explicitly so local lifecycle plans and GitHub deployment jobs share the same context contract.
 
 ## Tradeoffs
 

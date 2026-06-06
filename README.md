@@ -8,6 +8,8 @@ The framework keeps application repositories thin:
 2. Each application adds a small `.github/workflows/package.yml` that calls the framework reusable workflow.
 3. The framework owns matrix planning, dependency checkout, toolchain setup, lifecycle execution, artifact upload, release upload, and provenance attestation.
 
+This repository implements the SDKWork standard in `../sdkwork-specs/GITHUB_WORKFLOW_SPEC.md`.
+
 ## Design Goals
 
 - One standard packaging contract for all SDKWork applications.
@@ -52,7 +54,14 @@ The generator writes:
 - `sdkwork.workflow.json`
 - `.github/workflows/package.yml`
 
-It refuses to overwrite existing files unless `--force` is passed.
+It refuses to overwrite existing files unless `--force` is passed. Generated lifecycle placeholder steps use `shell: "node"` and read SDKWork values through `process.env` so the starter workflow behaves the same on Linux, Windows, and macOS runners.
+
+For `--profiles server,desktop`, the starter config includes these package targets by default:
+
+| Profile | Package ids |
+| --- | --- |
+| server | `linux-debian-x64-server-deb`, `linux-rhel-x64-server-rpm`, `linux-x64-server-tar-gz` |
+| desktop | `windows-x64-desktop-msi`, `windows-x64-desktop-exe`, `macos-arm64-desktop-dmg` |
 
 Add `sdkwork.workflow.json` to the application repository:
 
@@ -81,7 +90,7 @@ Add `sdkwork.workflow.json` to the application repository:
   },
   "targets": [
     {
-      "id": "linux-x64-server-tgz",
+      "id": "linux-x64-server-tar-gz",
       "profile": "server",
       "platform": "linux",
       "architecture": "x64",
@@ -92,6 +101,46 @@ Add `sdkwork.workflow.json` to the application repository:
   ]
 }
 ```
+
+Package matrix items use one canonical package id:
+
+```text
+<platform>-<architecture>-<profile>-<format-token>
+```
+
+Linux native `deb` and `rpm` packages include the distribution family because dependency metadata, repository channels, signing, and install validation differ by family:
+
+```text
+linux-<distribution>-<architecture>-<profile>-<format-token>
+```
+
+Use `distribution: "debian"` or `distribution: "ubuntu"` for `deb`, and `distribution: "rhel"`, `"centos"`, `"fedora"`, `"opensuse"`, or `"suse"` for `rpm`. Generic Linux archives such as `tar.gz` do not include `distribution`.
+
+When one platform produces installer formats with different file globs, declare separate single-format targets. For example, prefer `windows-x64-desktop-msi` and `windows-x64-desktop-exe` as separate targets over one multi-format Windows target when the `.msi` and `.exe` files are collected by different globs.
+
+`format-token` is the package format normalized to lowercase kebab-case, so `tar.gz` becomes `tar-gz`. GitHub artifact names prepend `release.artifactPrefix`:
+
+```text
+<artifactPrefix>-<package-id>
+```
+
+Examples:
+
+| Profile | Platform | Distribution | Architecture | Format | Package id | Artifact name with `artifactPrefix: my-app` |
+| --- | --- | --- | --- | --- | --- | --- |
+| server | linux | debian | x64 | deb | `linux-debian-x64-server-deb` | `my-app-linux-debian-x64-server-deb` |
+| server | linux | ubuntu | arm64 | deb | `linux-ubuntu-arm64-server-deb` | `my-app-linux-ubuntu-arm64-server-deb` |
+| server | linux | rhel | x64 | rpm | `linux-rhel-x64-server-rpm` | `my-app-linux-rhel-x64-server-rpm` |
+| desktop | linux | fedora | x64 | rpm | `linux-fedora-x64-desktop-rpm` | `my-app-linux-fedora-x64-desktop-rpm` |
+| server | linux | omitted | x64 | tar.gz | `linux-x64-server-tar-gz` | `my-app-linux-x64-server-tar-gz` |
+| server | container | omitted | arm64 | oci | `container-arm64-server-oci` | `my-app-container-arm64-server-oci` |
+| desktop | windows | omitted | x64 | msi | `windows-x64-desktop-msi` | `my-app-windows-x64-desktop-msi` |
+| desktop | windows | omitted | x64 | exe | `windows-x64-desktop-exe` | `my-app-windows-x64-desktop-exe` |
+| desktop | macos | omitted | arm64 | dmg | `macos-arm64-desktop-dmg` | `my-app-macos-arm64-desktop-dmg` |
+| mobile | android | omitted | arm64 | aab | `android-arm64-mobile-aab` | `my-app-android-arm64-mobile-aab` |
+| mobile | ios | omitted | universal | ipa | `ios-universal-mobile-ipa` | `my-app-ios-universal-mobile-ipa` |
+| tablet | ipados | omitted | universal | ipa | `ipados-universal-tablet-ipa` | `my-app-ipados-universal-tablet-ipa` |
+| tablet | windows-tablet | omitted | x64 | msix | `windows-tablet-x64-tablet-msix` | `my-app-windows-tablet-x64-tablet-msix` |
 
 Add `.github/workflows/package.yml` using the template:
 
@@ -180,6 +229,7 @@ Every lifecycle command receives standard environment variables:
 - `SDKWORK_PACKAGE_PLATFORM`
 - `SDKWORK_PACKAGE_ARCHITECTURE`
 - `SDKWORK_PACKAGE_FORMAT`
+- `SDKWORK_PACKAGE_DISTRIBUTION` for Linux native `deb` and `rpm` packages
 - `SDKWORK_DEPLOY_ENVIRONMENT`
 - `SDKWORK_DEPLOY_URL`
 - `SDKWORK_DEPLOY_LIFECYCLE`
@@ -199,6 +249,7 @@ Deployment targets are declared in `sdkwork.workflow.json`:
       "profile": "server",
       "platform": "linux",
       "format": "deb",
+      "packageId": "linux-debian-x64-server-deb",
       "runner": "ubuntu-24.04",
       "url": "https://api.sdkwork.com/apps/my-app",
       "lifecycle": "deploy"
@@ -216,6 +267,10 @@ environment:
 ```
 
 Use GitHub Environment protection rules for production approvals and environment-scoped secrets. Cloud deployment actions should use OIDC where possible instead of static credentials.
+
+Deployment lifecycle jobs receive `SDKWORK_DEPLOY_ENVIRONMENT`, `SDKWORK_DEPLOY_URL`, and `SDKWORK_DEPLOY_LIFECYCLE` explicitly so local lifecycle plans and GitHub deployment jobs use the same context model.
+
+Deployment selectors must match at least one package target in the full workflow config. A typo in `targetId`, `packageId`, profile, platform, architecture, or format fails validation instead of silently skipping all deployment jobs.
 
 ## Tablet Packaging
 
@@ -258,6 +313,8 @@ dependency_refs_json: >-
     "SDKWORK_CORE_REF": "${{ vars.SDKWORK_CORE_REF }}"
   }
 ```
+
+Dependency refs are validated as safe Git refs before checkout. Dependency ref JSON is passed to the planner through an environment variable before shell execution instead of direct expression interpolation. Dependency checkout paths must not overlap the application source path or `.sdkwork/github-workflow`. The v1 framework supports `SDKWORK_RELEASE_TOKEN` as the dependency checkout token; other per-dependency `tokenSecret` names are rejected until a future token-map contract is added. Checkout logic passes tokens through Git credential headers instead of clone URLs.
 
 ## Local Validation
 
@@ -313,8 +370,13 @@ The reusable workflow uses:
 - Artifact attestation through `actions/attest`.
 - Lifecycle hooks for application-specific signing and SBOM generation.
 - Policy validation for required signing and SBOM hooks: `security.signingRequired` requires `lifecycle.sign`, and `security.sbomRequired` requires `lifecycle.sbom`.
+- Config-driven publication gates: `publish.workflowArtifact`, `publish.githubRelease`, and `publish.retentionDays` are enforced by the reusable workflow in addition to caller inputs.
+- Config-driven attestation gate: `security.artifactAttestations: false` disables provenance attestation; omitted values keep attestation enabled.
 - A declarative lifecycle contract so application repositories do not copy release pipeline YAML.
+- Toolchain setup consumes every supported planner output, including `.NET`, Android SDK, and Xcode setup.
 - Path validation for config paths and output globs.
+- Strict planner/schema alignment: unknown config properties, schema-declared type violations, empty target lists, and duplicate target formats fail validation.
+- Shell-based actions read workflow/action inputs through environment variables before command execution instead of embedding expressions directly in scripts.
 - Secret-like value redaction in framework logs.
 
 OIDC-based cloud publishing should be added as provider-specific publish actions. The framework keeps `id-token: write` available so cloud upload actions can avoid static long-lived credentials.
@@ -322,3 +384,42 @@ OIDC-based cloud publishing should be added as provider-specific publish actions
 ## Current Scope
 
 This repository provides the reusable workflow framework and the application-side contract. It does not replace application-specific package builders such as Tauri, Flutter, Gradle, WiX, `pkgbuild`, Docker, Helm, or custom SDKWork package scripts. Those commands stay in each application lifecycle config, while orchestration, matrix selection, dependency checkout, artifact handling, and release publishing stay centralized.
+
+## SDKWork Documentation Contract
+
+Domain: intelligence
+Capability: github-workflow
+Package type: node-package
+Status: standard
+
+### Public API
+
+Public exports are declared in `specs/component.spec.json` under `contracts.publicExports`.
+
+### Required SDK Surface
+
+- None declared in `specs/component.spec.json`.
+
+### Configuration
+
+Configuration keys and runtime entrypoints are declared in `specs/component.spec.json`.
+
+### SaaS/Private/Local Behavior
+
+This module follows the canonical standards linked from `specs/component.spec.json`, including deployment and runtime configuration rules where applicable.
+
+### Security
+
+Do not add secrets, live tokens, manual auth headers, or app-local credential handling to this module.
+
+### Extension Points
+
+Extension points are limited to declared public exports, runtime entrypoints, SDK clients, events, and config keys.
+
+### Verification
+
+- `pnpm test`
+
+### Owner And Status
+
+Owner and lifecycle status are tracked in `specs/component.spec.json`.

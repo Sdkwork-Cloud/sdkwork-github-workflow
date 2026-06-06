@@ -19,12 +19,20 @@ runs:
   steps:
     - shell: pwsh
       env:
+        SDKWORK_RELEASE_TAG: ${{ inputs.tag }}
+        SDKWORK_RELEASE_REPOSITORY: ${{ inputs.repository }}
         SDKWORK_RELEASE_FILES: ${{ inputs.files }}
+        SDKWORK_RELEASE_CLOBBER: ${{ inputs.clobber }}
       run: |
         $ErrorActionPreference = "Stop"
-        $tag = "${{ inputs.tag }}"
+        $tag = $env:SDKWORK_RELEASE_TAG
+        $repo = $env:SDKWORK_RELEASE_REPOSITORY
+        $clobber = $env:SDKWORK_RELEASE_CLOBBER
         if (-not $tag) {
           throw "Release tag is required"
+        }
+        if (-not $repo) {
+          throw "Release repository is required"
         }
         $files = @()
         $env:SDKWORK_RELEASE_FILES -split "`n" | ForEach-Object {
@@ -36,13 +44,13 @@ runs:
         if ($files.Count -eq 0) {
           throw "No files matched release upload inputs"
         }
-        gh release view $tag --repo "${{ inputs.repository }}" *> $null
+        gh release view $tag --repo $repo *> $null
         if ($LASTEXITCODE -ne 0) {
-          gh release create $tag --repo "${{ inputs.repository }}" --title $tag --notes "Automated SDKWork package release."
+          gh release create $tag --repo $repo --title $tag --notes "Automated SDKWork package release."
         }
         foreach ($file in $files) {
-          $ghArgs = @("release", "upload", $tag, $file.FullName, "--repo", "${{ inputs.repository }}")
-          if ("${{ inputs.clobber }}" -eq "true") {
+          $ghArgs = @("release", "upload", $tag, $file.FullName, "--repo", $repo)
+          if ($clobber -eq "true") {
             $ghArgs += "--clobber"
           }
           gh @ghArgs

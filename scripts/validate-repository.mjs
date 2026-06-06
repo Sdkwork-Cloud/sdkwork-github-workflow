@@ -13,6 +13,12 @@ import {
 import { mkdir, rm } from 'node:fs/promises';
 
 const REQUIRED_FILES = Object.freeze([
+  'AGENTS.md',
+  'CLAUDE.md',
+  '.sdkwork/README.md',
+  '.sdkwork/.gitignore',
+  '.sdkwork/skills/README.md',
+  '.sdkwork/plugins/README.md',
   '.github/workflows/sdkwork-package.yml',
   'actions/validate-config/action.yml',
   'actions/checkout-dependencies/action.yml',
@@ -34,6 +40,39 @@ function requireFile(filePath, issues) {
   }
 }
 
+function extractLiteralRunBlocks(text) {
+  const lines = text.split(/\r?\n/u);
+  const blocks = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const runLine = /^(?<indent> *)run:\s*\|[+-]?\s*$/u.exec(lines[index]);
+    if (!runLine?.groups) {
+      continue;
+    }
+
+    const baseIndent = runLine.groups.indent.length;
+    const blockLines = [lines[index]];
+
+    for (let blockIndex = index + 1; blockIndex < lines.length; blockIndex += 1) {
+      const line = lines[blockIndex];
+      if (line.trim() === '') {
+        blockLines.push(line);
+        continue;
+      }
+
+      const indent = /^ */u.exec(line)?.[0].length ?? 0;
+      if (indent <= baseIndent) {
+        break;
+      }
+      blockLines.push(line);
+    }
+
+    blocks.push(blockLines.join('\n'));
+  }
+
+  return blocks;
+}
+
 function validateYamlText(filePath, issues) {
   const text = readFileSync(path.resolve(filePath), 'utf8');
   if (/\t/u.test(text)) {
@@ -47,6 +86,13 @@ function validateYamlText(filePath, issues) {
   }
   if (filePath.endsWith('checkout-dependencies/action.yml') && text.includes('x-access-token:${{ inputs.token }}')) {
     issues.push(`${filePath} must not put tokens into clone URLs`);
+  }
+  if (/--dependency-refs-json\s+'\$\{\{\s*inputs\.dependency_refs_json\s*\}\}'/u.test(text)) {
+    issues.push(`${filePath} must pass dependency_refs_json through an environment variable before shell execution`);
+  }
+  const runBlocks = extractLiteralRunBlocks(text);
+  if (runBlocks.some((block) => /\$\{\{\s*inputs\./u.test(block))) {
+    issues.push(`${filePath} must not embed action input expressions in shell scripts`);
   }
 }
 
@@ -122,6 +168,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 
 export {
   REQUIRED_FILES,
+  extractLiteralRunBlocks,
   main,
   validateExamples,
   validateYamlText,

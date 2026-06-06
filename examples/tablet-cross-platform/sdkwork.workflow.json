@@ -62,7 +62,7 @@
       "outputGlobs": ["build/ipados/ipa/*.ipa"]
     },
     {
-      "id": "android-tablet-arm64-aab",
+      "id": "android-tablet-arm64-tablet-aab",
       "profile": "tablet",
       "platform": "android-tablet",
       "architecture": "arm64",
@@ -71,7 +71,7 @@
       "outputGlobs": ["build/app/outputs/bundle/tabletRelease/*.aab"]
     },
     {
-      "id": "windows-tablet-x64-msix",
+      "id": "windows-tablet-x64-tablet-msix",
       "profile": "tablet",
       "platform": "windows-tablet",
       "architecture": "x64",

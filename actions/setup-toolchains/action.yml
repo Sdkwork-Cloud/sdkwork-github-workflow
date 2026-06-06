@@ -9,10 +9,12 @@ runs:
   steps:
     - id: read
       shell: bash
+      env:
+        SDKWORK_CONFIG_PATH: ${{ inputs.config-path }}
       run: |
         set -euo pipefail
         node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs toolchains \
-          --config "${{ inputs.config-path }}" \
+          --config "${SDKWORK_CONFIG_PATH}" \
           --github-output
 
     - name: Set up pnpm
@@ -57,6 +59,22 @@ runs:
       uses: subosito/flutter-action@v2
       with:
         channel: ${{ steps.read.outputs.flutter }}
+
+    - name: Set up .NET
+      if: steps.read.outputs.dotnet != ''
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ steps.read.outputs.dotnet }}
+
+    - name: Set up Android SDK
+      if: steps.read.outputs.android == 'true'
+      uses: android-actions/setup-android@v3
+
+    - name: Set up Xcode
+      if: steps.read.outputs.xcode == 'true'
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
 
     - name: Set up WiX
       if: runner.os == 'Windows' && steps.read.outputs.wix != ''
