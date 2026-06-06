@@ -99,13 +99,20 @@ Add `.github/workflows/package.yml` using the template:
 name: Package Application
 
 on:
+  push:
+    tags:
+      - v*
+      - '*.*.*'
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       tag:
-        required: true
+        required: false
         default: v0.1.0
       package_version:
-        required: true
+        required: false
         default: 0.1.0
       platform:
         required: true
@@ -125,15 +132,22 @@ jobs:
     uses: Sdkwork-Cloud/sdkwork-github-workflow/.github/workflows/sdkwork-package.yml@v1
     with:
       config_path: sdkwork.workflow.json
-      tag: ${{ inputs.tag }}
-      package_version: ${{ inputs.package_version }}
-      platform: ${{ inputs.platform }}
-      architecture: ${{ inputs.architecture }}
-      profile: ${{ inputs.profile }}
-      format: ${{ inputs.format }}
+      tag: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+      package_version: ${{ inputs.package_version || github.event.release.tag_name || github.ref_name }}
+      platform: ${{ inputs.platform || 'all' }}
+      architecture: ${{ inputs.architecture || 'all' }}
+      profile: ${{ inputs.profile || 'all' }}
+      format: ${{ inputs.format || 'all' }}
+      deploy: ${{ inputs.deploy || github.event_name == 'release' }}
       framework_ref: v1
     secrets: inherit
 ```
+
+The standard application workflow supports three entrypoints:
+
+- `push` tag: package the pushed release tag.
+- `release.published`: package and run configured deployments by default.
+- `workflow_dispatch`: manually package or deploy a selected platform/profile/format.
 
 ## Lifecycle Contract
 

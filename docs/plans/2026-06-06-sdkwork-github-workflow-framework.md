@@ -150,3 +150,20 @@
 - [x] Reject target-level `signing: false` when signing is globally required.
 - [x] Run full local verification.
 - [x] Commit supply chain policy validation.
+
+### Task 10: Application Git Trigger Standardization
+
+**Files:**
+- Modify: `scripts/sdkwork-workflow.mjs`
+- Modify: `templates/app-package.workflow.yml`
+- Modify: `tests/sdkwork-workflow.test.mjs`
+- Modify: `README.md`
+- Modify: `docs/design/sdkwork-github-workflow-framework.md`
+
+- [x] Write failing tests for generated application workflow git triggers.
+- [x] Add tag push trigger to generated application workflow.
+- [x] Add release published trigger to generated application workflow.
+- [x] Standardize tag/version fallback for manual, tag, and release events.
+- [x] Inject dependency ref variables into generated workflow.
+- [x] Run full local verification.
+- [x] Commit application git trigger standardization.

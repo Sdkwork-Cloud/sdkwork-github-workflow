@@ -1306,6 +1306,13 @@ function createApplicationPackageWorkflow({ frameworkRef = 'v1' } = {}) {
   return `name: Package Application
 
 on:
+  push:
+    tags:
+      - v*
+      - '*.*.*'
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       tag:
@@ -1350,17 +1357,25 @@ jobs:
     uses: Sdkwork-Cloud/sdkwork-github-workflow/.github/workflows/sdkwork-package.yml@${frameworkRef}
     with:
       config_path: sdkwork.workflow.json
-      tag: \${{ inputs.tag }}
-      package_version: \${{ inputs.package_version }}
-      platform: \${{ inputs.platform }}
-      architecture: \${{ inputs.architecture }}
-      profile: \${{ inputs.profile }}
-      format: \${{ inputs.format }}
+      tag: \${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+      package_version: \${{ inputs.package_version || github.event.release.tag_name || github.ref_name }}
+      platform: \${{ inputs.platform || 'all' }}
+      architecture: \${{ inputs.architecture || 'all' }}
+      profile: \${{ inputs.profile || 'all' }}
+      format: \${{ inputs.format || 'all' }}
       publish_release: true
       upload_artifact: true
-      deploy: \${{ inputs.deploy }}
+      deploy: \${{ inputs.deploy || github.event_name == 'release' }}
       retention_days: 30
       framework_ref: ${frameworkRef}
+      dependency_refs_json: >-
+        {
+          "SDKWORK_APPBASE_REF": "\${{ vars.SDKWORK_APPBASE_REF }}",
+          "SDKWORK_CORE_REF": "\${{ vars.SDKWORK_CORE_REF }}",
+          "SDKWORK_UI_REF": "\${{ vars.SDKWORK_UI_REF }}",
+          "SDKWORK_IM_SDK_REF": "\${{ vars.SDKWORK_IM_SDK_REF }}",
+          "SDKWORK_SDK_GENERATOR_REF": "\${{ vars.SDKWORK_SDK_GENERATOR_REF }}"
+        }
     secrets: inherit
 `;
 }

@@ -117,6 +117,7 @@ The framework supports these package formats:
 
 The original workflow contains these framework-level concepts:
 
+- Git tag and release triggers for standard package/deploy entrypoints.
 - `workflow_dispatch` inputs for tag/version/platform/architecture/deployment mode.
 - Matrix planner.
 - Dependency repository checkout.
@@ -137,7 +138,7 @@ The example `examples/sdkwork-claw-router/sdkwork.workflow.json` maps these into
 - targets for Linux, Windows, macOS, desktop/server/container packages.
 - deployments for production server rollout and desktop/mobile store publishing.
 
-The per-application workflow shrinks to a reusable workflow call.
+The per-application workflow shrinks to a reusable workflow call with standardized tag push, release publish, and manual dispatch triggers.
 
 ## Standards Alignment
 
