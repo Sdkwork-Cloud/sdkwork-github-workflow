@@ -365,6 +365,84 @@ test('uses canonical package ids and artifact names for app profiles and platfor
   );
 });
 
+test('uses canonical variant package ids and lifecycle environment for deployment variants', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'variant-demo', repository: 'Org/variant-demo' },
+    release: { artifactPrefix: 'variant-demo' },
+    lifecycle: {
+      package: [{ run: 'echo "$SDKWORK_PACKAGE_VARIANT"' }],
+    },
+    targets: [
+      {
+        id: 'container-x64-server-cpu-tar-gz',
+        profile: 'server',
+        platform: 'container',
+        architecture: 'x64',
+        variant: 'cpu',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['artifacts/release/container/linux/x64/cpu/*.tar.gz'],
+      },
+      {
+        id: 'container-x64-server-nvidia-cuda-tar-gz',
+        profile: 'server',
+        platform: 'container',
+        architecture: 'x64',
+        variant: 'nvidia-cuda',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['artifacts/release/container/linux/x64/nvidia-cuda/*.tar.gz'],
+      },
+    ],
+  };
+
+  assert.deepEqual(validateWorkflowConfig(config), []);
+
+  const matrix = createPackageMatrix(config, { platform: 'container', architecture: 'x64', profile: 'server', format: 'tar.gz' });
+
+  assert.deepEqual(
+    matrix.include.map((item) => [item.packageId, item.artifactName, item.variant]),
+    [
+      ['container-x64-server-cpu-tar-gz', 'variant-demo-container-x64-server-cpu-tar-gz', 'cpu'],
+      ['container-x64-server-nvidia-cuda-tar-gz', 'variant-demo-container-x64-server-nvidia-cuda-tar-gz', 'nvidia-cuda'],
+    ],
+  );
+
+  const plan = createLifecyclePlan(config, {
+    phase: 'package',
+    matrixItem: matrix.include[1],
+    version: '1.2.3',
+  });
+
+  assert.equal(plan.steps[0].env.SDKWORK_PACKAGE_VARIANT, 'nvidia-cuda');
+});
+
+test('rejects non-canonical variant target ids and package ids', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'bad-variant', repository: 'Org/bad-variant' },
+    release: { artifactPrefix: 'bad-variant' },
+    targets: [
+      {
+        id: 'container-x64-server-tar-gz',
+        packageId: 'container-x64-server-tar-gz',
+        profile: 'server',
+        platform: 'container',
+        architecture: 'x64',
+        variant: 'nvidia-cuda',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+    ],
+  };
+
+  const issues = validateWorkflowConfig(config);
+  assert.ok(issues.some((issue) => issue.includes('targets[0].id must be container-x64-server-nvidia-cuda-tar-gz')));
+  assert.ok(issues.some((issue) => issue.includes('targets[0].packageId must be container-x64-server-nvidia-cuda-tar-gz')));
+});
+
 test('rejects non-canonical explicit target package ids', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
@@ -558,7 +636,9 @@ test('schema declares the canonical package id token pattern', async () => {
   assert.equal(schema.properties.release.properties.artifactPrefix.pattern, '^[a-z0-9][a-z0-9-]*$');
   assert.equal(schema.properties.targets.items.properties.id.pattern, '^[a-z0-9][a-z0-9-]*$');
   assert.deepEqual(schema.properties.targets.items.properties.distribution.enum, ['debian', 'ubuntu', 'rhel', 'centos', 'fedora', 'opensuse', 'suse']);
+  assert.equal(schema.properties.targets.items.properties.variant.pattern, '^[a-z0-9][a-z0-9-]*$');
   assert.equal(schema.properties.targets.items.properties.packageId.pattern, '^[a-z0-9][a-z0-9-]*$');
+  assert.equal(schema.properties.deployments.items.properties.variant.pattern, '^[a-z0-9][a-z0-9-]*$');
   assert.equal(schema.properties.deployments.items.properties.packageId.pattern, '^[a-z0-9][a-z0-9-]*$');
 });
 
@@ -1403,6 +1483,7 @@ test('initializes an application workflow without overwriting existing files', a
   assert.ok(workflow.includes('release:'));
   assert.ok(workflow.includes("tag: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}"));
   assert.ok(workflow.includes("package_version: ${{ github.event.inputs.package_version || github.event.release.tag_name || github.ref_name }}"));
+  assert.ok(workflow.includes("variant: ${{ github.event.inputs.variant || 'all' }}"));
   assert.ok(workflow.includes("deploy: ${{ github.event.inputs.deploy == 'true' || github.event_name == 'release' }}"));
   assert.ok(workflow.includes('Sdkwork-Cloud/sdkwork-github-workflow/.github/workflows/sdkwork-package.yml@v1'));
   assert.ok(workflow.includes('dependency_refs_json: >-'));
@@ -2134,6 +2215,7 @@ test('reusable workflow gates publication policies and passes deployment context
   assert.match(workflow, /deploy-environment: \$\{\{ matrix\.environment \}\}/u);
   assert.match(workflow, /deploy-url: \$\{\{ matrix\.url \}\}/u);
   assert.match(workflow, /deploy-lifecycle: \$\{\{ matrix\.lifecycle \}\}/u);
+  assert.match(workflow, /SDKWORK_PACKAGE_VARIANT: \$\{\{ matrix\.variant \}\}/u);
 });
 
 test('reusable workflow passes dependency refs JSON through an environment variable', async () => {

@@ -31,6 +31,7 @@ const SUPPORTED_LINUX_DISTRIBUTIONS = Object.freeze([
   ...SUPPORTED_DEB_DISTRIBUTIONS,
   ...SUPPORTED_RPM_DISTRIBUTIONS,
 ]);
+const PACKAGE_VARIANT_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
 const SUPPORTED_FORMATS = Object.freeze([
   'zip',
   'tar.gz',
@@ -94,10 +95,10 @@ const TOOLCHAIN_CONFIG_KEYS = Object.freeze(['node', 'pnpm', 'python', 'java', '
 const TOOLCHAIN_STRING_KEYS = Object.freeze(['node', 'pnpm', 'python', 'java', 'go', 'rust', 'flutter', 'dotnet', 'wix']);
 const TOOLCHAIN_BOOLEAN_KEYS = Object.freeze(['android', 'xcode']);
 const LIFECYCLE_STEP_KEYS = Object.freeze(['name', 'run', 'shell', 'workingDirectory', 'env']);
-const TARGET_CONFIG_KEYS = Object.freeze(['id', 'packageId', 'profile', 'platform', 'distribution', 'architecture', 'formats', 'runner', 'outputGlobs', 'environment', 'signing']);
+const TARGET_CONFIG_KEYS = Object.freeze(['id', 'packageId', 'profile', 'platform', 'distribution', 'architecture', 'variant', 'formats', 'runner', 'outputGlobs', 'environment', 'signing']);
 const SECURITY_CONFIG_KEYS = Object.freeze(['oidcRequired', 'artifactAttestations', 'sbomRequired', 'signingRequired']);
 const PUBLISH_CONFIG_KEYS = Object.freeze(['workflowArtifact', 'githubRelease', 'retentionDays']);
-const DEPLOYMENT_CONFIG_KEYS = Object.freeze(['id', 'environment', 'url', 'runner', 'profile', 'platform', 'architecture', 'format', 'targetId', 'packageId', 'lifecycle']);
+const DEPLOYMENT_CONFIG_KEYS = Object.freeze(['id', 'environment', 'url', 'runner', 'profile', 'platform', 'architecture', 'variant', 'format', 'targetId', 'packageId', 'lifecycle']);
 const CHANGELOG_CONFIG_KEYS = Object.freeze(['enabled', 'source', 'path', 'includeCommitSubjects', 'maxCommitSubjects']);
 const SUPPORTED_CHANGELOG_SOURCES = Object.freeze(['auto', 'app-manifest', 'file', 'git', 'none']);
 const FRAMEWORK_CHECKOUT_PATH = '.sdkwork/github-workflow';
@@ -120,6 +121,7 @@ Options:
   --platform <value>     Platform filter, or all.
   --architecture <value> Architecture filter, or all.
   --profile <value>      Profile filter, or all.
+  --variant <value>      Package variant filter, or all.
   --format <value>       Package format filter, or all.
   --version <value>      Release/package version override.
   --phase <value>        Lifecycle phase for lifecycle command.
@@ -158,6 +160,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     platform: 'all',
     architecture: 'all',
     profile: 'all',
+    variant: 'all',
     format: 'all',
     version: null,
     phase: null,
@@ -200,6 +203,10 @@ function parseArgs(argv = process.argv.slice(2)) {
         break;
       case '--profile':
         settings.profile = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--variant':
+        settings.variant = requireValue(argv, index, arg);
         index += 1;
         break;
       case '--format':
@@ -575,6 +582,7 @@ function validateTarget(target, index, issues, seenIds) {
     validateEnum(target.distribution, `${label}.distribution`, SUPPORTED_LINUX_DISTRIBUTIONS, issues);
   }
   validateEnum(target?.architecture, `${label}.architecture`, SUPPORTED_ARCHITECTURES, issues);
+  validateOptionalString(target?.variant, `${label}.variant`, issues, { pattern: PACKAGE_VARIANT_PATTERN });
   validateArray(target?.formats, `${label}.formats`, issues, { minLength: 1 });
   if (Array.isArray(target?.formats)) {
     if (new Set(target.formats).size !== target.formats.length) {
@@ -703,6 +711,9 @@ function validateDeployment(deployment, index, issues, seenIds) {
   if (deployment?.architecture !== undefined) {
     validateEnum(deployment.architecture, `${label}.architecture`, SUPPORTED_ARCHITECTURES, issues);
   }
+  if (deployment?.variant !== undefined) {
+    validateOptionalString(deployment.variant, `${label}.variant`, issues, { pattern: PACKAGE_VARIANT_PATTERN });
+  }
   if (deployment?.format !== undefined) {
     validateEnum(deployment.format, `${label}.format`, SUPPORTED_FORMATS, issues);
   }
@@ -744,6 +755,7 @@ function deploymentMatchesAnyTarget(deployment, targets) {
         platform: target.platform,
         ...(target.distribution ? { distribution: target.distribution } : {}),
         architecture: target.architecture,
+        ...(target.variant ? { variant: target.variant } : {}),
         format,
       })) {
         return true;
@@ -986,6 +998,7 @@ function createPackageMatrix(config, filters = {}) {
     platform: filters.platform ?? 'all',
     architecture: filters.architecture ?? 'all',
     profile: filters.profile ?? 'all',
+    variant: filters.variant ?? 'all',
     format: filters.format ?? 'all',
   };
 
@@ -1000,6 +1013,9 @@ function createPackageMatrix(config, filters = {}) {
     if (!matchesFilter(target.profile, normalizedFilters.profile)) {
       continue;
     }
+    if (!matchesFilter(target.variant ?? '', normalizedFilters.variant)) {
+      continue;
+    }
 
     for (const format of target.formats) {
       if (!matchesFilter(format, normalizedFilters.format)) {
@@ -1012,6 +1028,7 @@ function createPackageMatrix(config, filters = {}) {
         platform: target.platform,
         ...(target.distribution ? { distribution: target.distribution } : {}),
         architecture: target.architecture,
+        ...(target.variant ? { variant: target.variant } : {}),
         format,
         runner: target.runner,
         packageId,
@@ -1026,7 +1043,7 @@ function createPackageMatrix(config, filters = {}) {
 
   if (include.length === 0) {
     throw new Error(
-      `No package targets selected for platform=${normalizedFilters.platform}, architecture=${normalizedFilters.architecture}, profile=${normalizedFilters.profile}, format=${normalizedFilters.format}`,
+      `No package targets selected for platform=${normalizedFilters.platform}, architecture=${normalizedFilters.architecture}, profile=${normalizedFilters.profile}, variant=${normalizedFilters.variant}, format=${normalizedFilters.format}`,
     );
   }
 
@@ -1059,6 +1076,7 @@ function createDeploymentMatrix(config, { packageMatrix = null, filters = {} } =
         platform: packageItem.platform,
         ...(packageItem.distribution ? { distribution: packageItem.distribution } : {}),
         architecture: packageItem.architecture,
+        ...(packageItem.variant ? { variant: packageItem.variant } : {}),
         format: packageItem.format,
       });
     }
@@ -1071,6 +1089,7 @@ function deploymentMatchesPackage(deployment, packageItem) {
   return matchesFilter(packageItem.profile, deployment.profile ?? 'all')
     && matchesFilter(packageItem.platform, deployment.platform ?? 'all')
     && matchesFilter(packageItem.architecture, deployment.architecture ?? 'all')
+    && matchesFilter(packageItem.variant ?? '', deployment.variant ?? 'all')
     && matchesFilter(packageItem.format, deployment.format ?? 'all')
     && matchesFilter(packageItem.id, deployment.targetId ?? 'all')
     && matchesFilter(packageItem.packageId, deployment.packageId ?? 'all');
@@ -1082,13 +1101,17 @@ function packageIdForTarget(target, format) {
 
 function canonicalPackageIdForTarget(target, format) {
   if (target.platform === 'linux' && isLinuxNativePackageFormat(format) && target.distribution) {
-    return `${target.platform}-${target.distribution}-${target.architecture}-${target.profile}-${formatToken(format)}`;
+    return joinPackageIdSegments(target.platform, target.distribution, target.architecture, target.profile, target.variant, formatToken(format));
   }
-  return `${target.platform}-${target.architecture}-${target.profile}-${formatToken(format)}`;
+  return joinPackageIdSegments(target.platform, target.architecture, target.profile, target.variant, formatToken(format));
 }
 
 function targetGroupIdForTarget(target) {
-  return `${target.platform}-${target.architecture}-${target.profile}`;
+  return joinPackageIdSegments(target.platform, target.architecture, target.profile, target.variant);
+}
+
+function joinPackageIdSegments(...segments) {
+  return segments.map((segment) => String(segment ?? '').trim()).filter(Boolean).join('-');
 }
 
 function isLinuxNativePackageFormat(format) {
@@ -1220,6 +1243,7 @@ function createWorkflowSummary(config, matrix, { version = null, releaseTag = nu
     profiles: unique(matrix.include.map((item) => item.profile)),
     platforms: unique(matrix.include.map((item) => item.platform)),
     architectures: unique(matrix.include.map((item) => item.architecture)),
+    variants: unique(matrix.include.map((item) => item.variant).filter(Boolean)),
     formats: unique(matrix.include.map((item) => item.format)),
     publish: {
       workflowArtifact: config.publish?.workflowArtifact !== false,
@@ -1493,6 +1517,7 @@ function createLifecyclePlan(config, {
     SDKWORK_PACKAGE_VERSION: resolvePackageVersion(config, { version, releaseTag }) || '',
     SDKWORK_RELEASE_TAG: releaseTag || '',
     ...(matrixItem.distribution ? { SDKWORK_PACKAGE_DISTRIBUTION: matrixItem.distribution } : {}),
+    ...(matrixItem.variant ? { SDKWORK_PACKAGE_VARIANT: matrixItem.variant } : {}),
     ...(matrixItem.environment ? { SDKWORK_DEPLOY_ENVIRONMENT: matrixItem.environment } : {}),
     ...(matrixItem.url ? { SDKWORK_DEPLOY_URL: matrixItem.url } : {}),
     ...(matrixItem.lifecycle ? { SDKWORK_DEPLOY_LIFECYCLE: matrixItem.lifecycle } : {}),

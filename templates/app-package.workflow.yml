@@ -62,6 +62,10 @@ on:
           - web
           - worker
           - library
+      variant:
+        description: Package variant filter.
+        required: true
+        default: all
       format:
         description: Package format filter.
         required: true
@@ -89,6 +93,7 @@ jobs:
       platform: ${{ github.event.inputs.platform || 'all' }}
       architecture: ${{ github.event.inputs.architecture || 'all' }}
       profile: ${{ github.event.inputs.profile || 'all' }}
+      variant: ${{ github.event.inputs.variant || 'all' }}
       format: ${{ github.event.inputs.format || 'all' }}
       publish_release: true
       upload_artifact: true

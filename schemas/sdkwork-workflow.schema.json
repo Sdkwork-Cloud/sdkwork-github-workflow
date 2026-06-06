@@ -239,6 +239,11 @@
           "architecture": {
             "enum": ["x64", "arm64", "armv7", "universal", "wasm32", "noarch"]
           },
+          "variant": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Optional package variant such as cpu, nvidia-cuda, or amd-rocm. When present it is inserted between profile and format in the canonical package id."
+          },
           "formats": {
             "type": "array",
             "minItems": 1,
@@ -355,6 +360,10 @@
           },
           "architecture": {
             "enum": ["x64", "arm64", "armv7", "universal", "wasm32", "noarch"]
+          },
+          "variant": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
           },
           "format": {
             "enum": [

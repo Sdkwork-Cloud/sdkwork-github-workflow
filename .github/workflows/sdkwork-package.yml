@@ -33,6 +33,11 @@ on:
         required: false
         type: string
         default: all
+      variant:
+        description: Package variant filter.
+        required: false
+        type: string
+        default: all
       format:
         description: Package format filter.
         required: false
@@ -81,7 +86,7 @@ permissions:
   artifact-metadata: write
 
 concurrency:
-  group: sdkwork-package-${{ github.repository }}-${{ inputs.tag || github.ref_name }}-${{ inputs.platform }}-${{ inputs.architecture }}-${{ inputs.profile }}-${{ inputs.format }}
+  group: sdkwork-package-${{ github.repository }}-${{ inputs.tag || github.ref_name }}-${{ inputs.platform }}-${{ inputs.architecture }}-${{ inputs.profile }}-${{ inputs.variant }}-${{ inputs.format }}
   cancel-in-progress: false
 
 jobs:
@@ -128,6 +133,7 @@ jobs:
           SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
           SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
           SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
+          SDKWORK_FILTER_VARIANT: ${{ inputs.variant }}
           SDKWORK_FILTER_FORMAT: ${{ inputs.format }}
           SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
           SDKWORK_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -138,6 +144,7 @@ jobs:
             --platform "${SDKWORK_FILTER_PLATFORM}" \
             --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
             --profile "${SDKWORK_FILTER_PROFILE}" \
+            --variant "${SDKWORK_FILTER_VARIANT}" \
             --format "${SDKWORK_FILTER_FORMAT}" \
             --version "${SDKWORK_PACKAGE_VERSION}" \
             --release-tag "${SDKWORK_RELEASE_TAG}" \
@@ -164,6 +171,7 @@ jobs:
           SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
           SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
           SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
+          SDKWORK_FILTER_VARIANT: ${{ inputs.variant }}
           SDKWORK_FILTER_FORMAT: ${{ inputs.format }}
         run: |
           set -euo pipefail
@@ -172,6 +180,7 @@ jobs:
             --platform "${SDKWORK_FILTER_PLATFORM}" \
             --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
             --profile "${SDKWORK_FILTER_PROFILE}" \
+            --variant "${SDKWORK_FILTER_VARIANT}" \
             --format "${SDKWORK_FILTER_FORMAT}" \
             --github-output
 
@@ -192,6 +201,7 @@ jobs:
       SDKWORK_PACKAGE_PROFILE: ${{ matrix.profile }}
       SDKWORK_PACKAGE_PLATFORM: ${{ matrix.platform }}
       SDKWORK_PACKAGE_ARCHITECTURE: ${{ matrix.architecture }}
+      SDKWORK_PACKAGE_VARIANT: ${{ matrix.variant }}
       SDKWORK_PACKAGE_FORMAT: ${{ matrix.format }}
       GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
     steps:
@@ -354,6 +364,7 @@ jobs:
           SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
           SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
           SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
+          SDKWORK_FILTER_VARIANT: ${{ inputs.variant }}
           SDKWORK_FILTER_FORMAT: ${{ inputs.format }}
           SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
           SDKWORK_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -364,6 +375,7 @@ jobs:
             --platform "${SDKWORK_FILTER_PLATFORM}" \
             --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
             --profile "${SDKWORK_FILTER_PROFILE}" \
+            --variant "${SDKWORK_FILTER_VARIANT}" \
             --format "${SDKWORK_FILTER_FORMAT}" \
             --version "${SDKWORK_PACKAGE_VERSION}" \
             --release-tag "${SDKWORK_RELEASE_TAG}" \
@@ -404,6 +416,7 @@ jobs:
       SDKWORK_PACKAGE_PROFILE: ${{ matrix.profile }}
       SDKWORK_PACKAGE_PLATFORM: ${{ matrix.platform }}
       SDKWORK_PACKAGE_ARCHITECTURE: ${{ matrix.architecture }}
+      SDKWORK_PACKAGE_VARIANT: ${{ matrix.variant }}
       SDKWORK_PACKAGE_FORMAT: ${{ matrix.format }}
       SDKWORK_DEPLOY_ENVIRONMENT: ${{ matrix.environment }}
       SDKWORK_DEPLOY_URL: ${{ matrix.url }}
