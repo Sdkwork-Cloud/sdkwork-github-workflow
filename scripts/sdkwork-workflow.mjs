@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { appendFile, readFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
@@ -8,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 const SCHEMA_VERSION = '2026-06-06.sdkwork.workflow.v1';
 const SUPPORTED_PROFILES = Object.freeze(['server', 'desktop', 'mobile', 'tablet', 'web', 'worker', 'library']);
+const ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
+const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const SUPPORTED_PLATFORMS = Object.freeze([
   'linux',
   'windows',
@@ -62,6 +65,7 @@ Commands:
   dependencies   Render dependency checkout metadata.
   toolchains     Render declared toolchain setup metadata.
   lifecycle      Render one lifecycle phase execution plan.
+  init-app       Generate sdkwork.workflow.json and package workflow for an app.
 
 Options:
   --config <path>        Config path (default sdkwork.workflow.json).
@@ -82,6 +86,14 @@ Options:
                          JSON object mapping dependency ref input names to refs.
   --dependency-refs-file <path>
                          JSON file mapping dependency ref input names to refs.
+  --root <path>           Application repository root for init-app.
+  --app-id <value>        Application id for init-app.
+  --app-name <value>      Application display name for init-app.
+  --repository <owner/repo>
+                         Application GitHub repository for init-app.
+  --profiles <csv>        Comma-separated profiles for init-app.
+  --framework-ref <ref>   Framework ref used by generated package workflow.
+  --force                Overwrite generated files in init-app.
   --run                  Execute lifecycle phase instead of only rendering it.
   --json                 Print JSON.
   --github-output        Append machine outputs to GITHUB_OUTPUT.
@@ -107,6 +119,13 @@ function parseArgs(argv = process.argv.slice(2)) {
     deployLifecycle: null,
     dependencyRefsJson: null,
     dependencyRefsFile: null,
+    root: '.',
+    appId: null,
+    appName: null,
+    repository: null,
+    profiles: 'server',
+    frameworkRef: 'v1',
+    force: false,
     run: false,
     json: false,
     githubOutput: false,
@@ -173,11 +192,38 @@ function parseArgs(argv = process.argv.slice(2)) {
         settings.dependencyRefsFile = requireValue(argv, index, arg);
         index += 1;
         break;
+      case '--root':
+        settings.root = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--app-id':
+        settings.appId = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--app-name':
+        settings.appName = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--repository':
+        settings.repository = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--profiles':
+        settings.profiles = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--framework-ref':
+        settings.frameworkRef = requireValue(argv, index, arg);
+        index += 1;
+        break;
       case '--json':
         settings.json = true;
         break;
       case '--run':
         settings.run = true;
+        break;
+      case '--force':
+        settings.force = true;
         break;
       case '--github-output':
         settings.githubOutput = true;
@@ -279,15 +325,13 @@ function validateWorkflowConfig(config) {
   }
 
   validateObject(config.app, 'app', issues);
-  validateRequiredString(config.app?.id, 'app.id', issues, { pattern: /^[a-z0-9][a-z0-9._-]*$/u });
-  validateRequiredString(config.app?.repository, 'app.repository', issues, {
-    pattern: /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u,
-  });
+  validateRequiredString(config.app?.id, 'app.id', issues, { pattern: ID_PATTERN });
+  validateRequiredString(config.app?.repository, 'app.repository', issues, { pattern: REPOSITORY_PATTERN });
   validateOptionalSafeRelativePath(config.app?.sourcePath, 'app.sourcePath', issues);
 
   validateObject(config.release, 'release', issues);
   validateRequiredString(config.release?.artifactPrefix, 'release.artifactPrefix', issues, {
-    pattern: /^[a-z0-9][a-z0-9._-]*$/u,
+    pattern: ID_PATTERN,
   });
   if (config.release?.defaultVersion !== undefined) {
     validateRequiredString(config.release.defaultVersion, 'release.defaultVersion', issues, {
@@ -337,10 +381,8 @@ function validateWorkflowConfig(config) {
 function validateDependency(dependency, index, issues) {
   const label = `dependencies[${index}]`;
   validateObject(dependency, label, issues);
-  validateRequiredString(dependency?.id, `${label}.id`, issues, { pattern: /^[a-z0-9][a-z0-9._-]*$/u });
-  validateRequiredString(dependency?.repository, `${label}.repository`, issues, {
-    pattern: /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u,
-  });
+  validateRequiredString(dependency?.id, `${label}.id`, issues, { pattern: ID_PATTERN });
+  validateRequiredString(dependency?.repository, `${label}.repository`, issues, { pattern: REPOSITORY_PATTERN });
   validateOptionalString(dependency?.ref, `${label}.ref`, issues);
   validateOptionalString(dependency?.refInput, `${label}.refInput`, issues, {
     pattern: /^[A-Za-z_][A-Za-z0-9_]*$/u,
@@ -387,7 +429,7 @@ function validateLifecycleStep(step, label, issues) {
 function validateTarget(target, index, issues, seenIds) {
   const label = `targets[${index}]`;
   validateObject(target, label, issues);
-  validateRequiredString(target?.id, `${label}.id`, issues, { pattern: /^[a-z0-9][a-z0-9._-]*$/u });
+  validateRequiredString(target?.id, `${label}.id`, issues, { pattern: ID_PATTERN });
   if (target?.id) {
     if (seenIds.has(target.id)) {
       issues.push(`${label}.id is duplicated: ${target.id}`);
@@ -421,7 +463,7 @@ function validateTarget(target, index, issues, seenIds) {
 function validateDeployment(deployment, index, issues, seenIds) {
   const label = `deployments[${index}]`;
   validateObject(deployment, label, issues);
-  validateRequiredString(deployment?.id, `${label}.id`, issues, { pattern: /^[a-z0-9][a-z0-9._-]*$/u });
+  validateRequiredString(deployment?.id, `${label}.id`, issues, { pattern: ID_PATTERN });
   if (deployment?.id) {
     if (seenIds.has(deployment.id)) {
       issues.push(`${label}.id is duplicated: ${deployment.id}`);
@@ -511,6 +553,15 @@ function validateOptionalString(value, label, issues, { pattern = null } = {}) {
     return;
   }
   validateRequiredString(value, label, issues, { pattern });
+}
+
+function assertMatchesPattern(value, label, pattern, description) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${label} is required`);
+  }
+  if (!pattern.test(value)) {
+    throw new Error(`${label} must match ${description}`);
+  }
 }
 
 function validateEnum(value, label, supported, issues) {
@@ -920,7 +971,375 @@ function defaultShellForHost() {
 }
 
 function defaultShellForMatrixItem(matrixItem) {
-  return matrixItem.platform === 'windows' ? 'pwsh' : 'bash';
+  return isWindowsPlatform(matrixItem.platform) ? 'pwsh' : 'bash';
+}
+
+function isWindowsPlatform(platform) {
+  return String(platform).startsWith('windows');
+}
+
+async function initApplicationWorkflow({
+  root = '.',
+  appId,
+  appName = null,
+  repository,
+  profiles = ['server'],
+  frameworkRef = 'v1',
+  force = false,
+} = {}) {
+  assertMatchesPattern(appId, 'appId', ID_PATTERN, 'lowercase letters, digits, dot, underscore, or hyphen; start with a letter or digit');
+  assertMatchesPattern(repository, 'repository', REPOSITORY_PATTERN, 'GitHub owner/repo');
+  const normalizedProfiles = normalizeProfiles(profiles);
+  const config = createInitialWorkflowConfig({
+    appId,
+    appName,
+    repository,
+    profiles: normalizedProfiles,
+  });
+  const issues = validateWorkflowConfig(config);
+  if (issues.length > 0) {
+    throw new Error(`Generated workflow config is invalid: ${issues.join('; ')}`);
+  }
+
+  const absoluteRoot = path.resolve(root);
+  const configPath = path.join(absoluteRoot, 'sdkwork.workflow.json');
+  const workflowPath = path.join(absoluteRoot, '.github', 'workflows', 'package.yml');
+  const files = [
+    {
+      path: configPath,
+      content: `${JSON.stringify(config, null, 2)}\n`,
+    },
+    {
+      path: workflowPath,
+      content: createApplicationPackageWorkflow({ frameworkRef }),
+    },
+  ];
+
+  if (!force) {
+    for (const file of files) {
+      if (existsSync(file.path)) {
+        throw new Error(`${file.path} already exists; pass --force to overwrite`);
+      }
+    }
+  }
+  for (const file of files) {
+    await mkdir(path.dirname(file.path), { recursive: true });
+    await writeFile(file.path, file.content, 'utf8');
+  }
+  return {
+    root: absoluteRoot,
+    written: files.map((file) => file.path),
+  };
+}
+
+function normalizeProfiles(profiles) {
+  const values = Array.isArray(profiles)
+    ? profiles
+    : String(profiles ?? '').split(',');
+  const normalized = [...new Set(values.map((value) => String(value).trim()).filter(Boolean))];
+  if (normalized.length === 0) {
+    throw new Error('profiles must contain at least one profile');
+  }
+  for (const profile of normalized) {
+    if (!SUPPORTED_PROFILES.includes(profile)) {
+      throw new Error(`Unsupported init-app profile: ${profile}`);
+    }
+  }
+  return normalized;
+}
+
+function createInitialWorkflowConfig({ appId, appName, repository, profiles }) {
+  return {
+    $schema: 'https://sdkwork.com/schemas/sdkwork-workflow.schema.json',
+    schemaVersion: SCHEMA_VERSION,
+    app: {
+      id: appId,
+      ...(appName ? { name: appName } : {}),
+      repository,
+      sourcePath: '.',
+    },
+    release: {
+      artifactPrefix: appId,
+      defaultVersion: '0.1.0',
+    },
+    toolchains: defaultToolchainsForProfiles(profiles),
+    lifecycle: {
+      install: [{ run: 'echo "install dependencies for $SDKWORK_APP_ID"' }],
+      build: [{ run: 'echo "build $SDKWORK_PACKAGE_ID"' }],
+      package: [{ run: 'echo "package $SDKWORK_PACKAGE_ID as $SDKWORK_PACKAGE_FORMAT"' }],
+      sign: [{ run: 'echo "signing hook for $SDKWORK_PACKAGE_ID"' }],
+      sbom: [{ run: 'echo "sbom hook for $SDKWORK_PACKAGE_ID"' }],
+      validate: [{ run: 'echo "validate $SDKWORK_PACKAGE_ID"' }],
+      deploy: [{ run: 'echo "deploy $SDKWORK_PACKAGE_ID to $SDKWORK_DEPLOY_ENVIRONMENT"' }],
+      publish: [{ run: 'echo "publish $SDKWORK_PACKAGE_ID to $SDKWORK_DEPLOY_ENVIRONMENT"' }],
+    },
+    targets: profiles.flatMap((profile) => defaultTargetsForProfile(profile)),
+    publish: {
+      workflowArtifact: true,
+      githubRelease: true,
+      retentionDays: 30,
+    },
+    deployments: defaultDeploymentsForProfiles(profiles),
+  };
+}
+
+function defaultToolchainsForProfiles(profiles) {
+  const toolchains = {};
+  if (profiles.some((profile) => ['web', 'desktop', 'mobile', 'tablet', 'server'].includes(profile))) {
+    toolchains.node = '22';
+  }
+  if (profiles.some((profile) => ['web', 'desktop', 'server'].includes(profile))) {
+    toolchains.pnpm = '10.33.0';
+  }
+  if (profiles.includes('server')) {
+    toolchains.python = '3.12';
+  }
+  if (profiles.some((profile) => ['mobile', 'tablet'].includes(profile))) {
+    toolchains.java = '21';
+    toolchains.flutter = 'stable';
+    toolchains.android = true;
+    toolchains.xcode = true;
+  }
+  if (profiles.includes('tablet')) {
+    toolchains.dotnet = '9.0.x';
+  }
+  return toolchains;
+}
+
+function defaultTargetsForProfile(profile) {
+  if (profile === 'server') {
+    return [
+      {
+        id: 'linux-x64-server-tgz',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/server/*.tar.gz'],
+      },
+    ];
+  }
+  if (profile === 'desktop') {
+    return [
+      {
+        id: 'windows-x64-desktop-msi',
+        profile: 'desktop',
+        platform: 'windows',
+        architecture: 'x64',
+        formats: ['msi'],
+        runner: 'windows-2022',
+        outputGlobs: ['dist/desktop/*.msi'],
+      },
+      {
+        id: 'macos-arm64-desktop-dmg',
+        profile: 'desktop',
+        platform: 'macos',
+        architecture: 'arm64',
+        formats: ['dmg'],
+        runner: 'macos-14',
+        outputGlobs: ['dist/desktop/*.dmg'],
+      },
+    ];
+  }
+  if (profile === 'mobile') {
+    return [
+      {
+        id: 'android-arm64-mobile-aab',
+        profile: 'mobile',
+        platform: 'android',
+        architecture: 'arm64',
+        formats: ['aab'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['build/app/outputs/bundle/release/*.aab'],
+      },
+      {
+        id: 'ios-universal-mobile-ipa',
+        profile: 'mobile',
+        platform: 'ios',
+        architecture: 'universal',
+        formats: ['ipa'],
+        runner: 'macos-14',
+        outputGlobs: ['build/ios/ipa/*.ipa'],
+      },
+    ];
+  }
+  if (profile === 'tablet') {
+    return [
+      {
+        id: 'ipados-universal-tablet-ipa',
+        profile: 'tablet',
+        platform: 'ipados',
+        architecture: 'universal',
+        formats: ['ipa'],
+        runner: 'macos-14',
+        outputGlobs: ['build/ipados/ipa/*.ipa'],
+      },
+      {
+        id: 'android-tablet-arm64-aab',
+        profile: 'tablet',
+        platform: 'android-tablet',
+        architecture: 'arm64',
+        formats: ['aab'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['build/app/outputs/bundle/tabletRelease/*.aab'],
+      },
+      {
+        id: 'windows-tablet-x64-msix',
+        profile: 'tablet',
+        platform: 'windows-tablet',
+        architecture: 'x64',
+        formats: ['msix'],
+        runner: 'windows-2022',
+        outputGlobs: ['dist/tablet/*.msix'],
+      },
+    ];
+  }
+  if (profile === 'web') {
+    return [
+      {
+        id: 'web-noarch-static',
+        profile: 'web',
+        platform: 'web',
+        architecture: 'noarch',
+        formats: ['static'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/web/**'],
+      },
+    ];
+  }
+  if (profile === 'worker') {
+    return [
+      {
+        id: 'linux-x64-worker-oci',
+        profile: 'worker',
+        platform: 'container',
+        architecture: 'x64',
+        formats: ['oci'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/worker/*.tar'],
+      },
+    ];
+  }
+  return [
+    {
+      id: 'library-noarch-zip',
+      profile: 'library',
+      platform: 'web',
+      architecture: 'noarch',
+      formats: ['zip'],
+      runner: 'ubuntu-24.04',
+      outputGlobs: ['dist/library/*.zip'],
+    },
+  ];
+}
+
+function defaultDeploymentsForProfiles(profiles) {
+  const deployments = [];
+  if (profiles.includes('server')) {
+    deployments.push({
+      id: 'production-server',
+      environment: 'production',
+      profile: 'server',
+      lifecycle: 'deploy',
+    });
+  }
+  if (profiles.includes('web')) {
+    deployments.push({
+      id: 'production-web',
+      environment: 'production-web',
+      profile: 'web',
+      lifecycle: 'deploy',
+    });
+  }
+  if (profiles.includes('mobile')) {
+    deployments.push({
+      id: 'production-mobile',
+      environment: 'production-mobile',
+      profile: 'mobile',
+      lifecycle: 'publish',
+    });
+  }
+  if (profiles.includes('tablet')) {
+    deployments.push({
+      id: 'production-tablet',
+      environment: 'production-tablet',
+      profile: 'tablet',
+      lifecycle: 'publish',
+    });
+  }
+  if (profiles.includes('desktop')) {
+    deployments.push({
+      id: 'production-desktop',
+      environment: 'production-desktop',
+      profile: 'desktop',
+      lifecycle: 'publish',
+    });
+  }
+  return deployments;
+}
+
+function createApplicationPackageWorkflow({ frameworkRef = 'v1' } = {}) {
+  return `name: Package Application
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag or source ref to package.
+        required: true
+        default: v0.1.0
+      package_version:
+        description: Package version used in artifact names and manifests.
+        required: true
+        default: 0.1.0
+      platform:
+        description: Platform filter.
+        required: true
+        default: all
+      architecture:
+        description: Architecture filter.
+        required: true
+        default: all
+      profile:
+        description: Runtime profile filter.
+        required: true
+        default: all
+      format:
+        description: Package format filter.
+        required: true
+        default: all
+      deploy:
+        description: Run configured deployment environments after packaging.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  package:
+    uses: Sdkwork-Cloud/sdkwork-github-workflow/.github/workflows/sdkwork-package.yml@${frameworkRef}
+    with:
+      config_path: sdkwork.workflow.json
+      tag: \${{ inputs.tag }}
+      package_version: \${{ inputs.package_version }}
+      platform: \${{ inputs.platform }}
+      architecture: \${{ inputs.architecture }}
+      profile: \${{ inputs.profile }}
+      format: \${{ inputs.format }}
+      publish_release: true
+      upload_artifact: true
+      deploy: \${{ inputs.deploy }}
+      retention_days: 30
+      framework_ref: ${frameworkRef}
+    secrets: inherit
+`;
 }
 
 function unique(values) {
@@ -954,6 +1373,25 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   const settings = parseArgs(argv);
   if (settings.help) {
     printHelp();
+    return 0;
+  }
+
+  if (settings.command === 'init-app') {
+    const result = await initApplicationWorkflow({
+      root: settings.root,
+      appId: settings.appId,
+      appName: settings.appName,
+      repository: settings.repository,
+      profiles: settings.profiles,
+      frameworkRef: settings.frameworkRef,
+      force: settings.force,
+    });
+    if (settings.json) {
+      console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+    } else {
+      console.log(`[sdkwork-workflow] initialized ${result.root}`);
+      result.written.forEach((filePath) => console.log(`[sdkwork-workflow]   ${filePath}`));
+    }
     return 0;
   }
 
@@ -1139,6 +1577,7 @@ export {
   createPackageMatrix,
   createToolchainPlan,
   createWorkflowSummary,
+  initApplicationWorkflow,
   loadWorkflowConfig,
   main,
   parseArgs,

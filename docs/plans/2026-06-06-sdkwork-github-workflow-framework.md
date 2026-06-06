@@ -119,3 +119,19 @@
 - [x] Add tablet example config.
 - [ ] Run full local verification.
 - [ ] Commit tablet packaging enhancements.
+
+### Task 8: Application Bootstrap Generator
+
+**Files:**
+- Modify: `scripts/sdkwork-workflow.mjs`
+- Modify: `scripts/validate-repository.mjs`
+- Modify: `tests/sdkwork-workflow.test.mjs`
+- Modify: `README.md`
+
+- [x] Write failing tests for `init-app` generation.
+- [x] Generate `sdkwork.workflow.json`.
+- [x] Generate `.github/workflows/package.yml`.
+- [x] Refuse to overwrite existing files unless forced.
+- [x] Validate generated config in repository validation.
+- [x] Run full local verification.
+- [x] Commit bootstrap generator enhancement.

@@ -6,9 +6,11 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   createPackageMatrix,
+  initApplicationWorkflow,
   loadWorkflowConfig,
   validateWorkflowConfig,
 } from './sdkwork-workflow.mjs';
+import { mkdir, rm } from 'node:fs/promises';
 
 const REQUIRED_FILES = Object.freeze([
   '.github/workflows/sdkwork-package.yml',
@@ -72,6 +74,25 @@ async function validateExamples(issues) {
   }
 }
 
+async function validateGenerator(issues) {
+  const root = path.resolve('tmp/repository-validate/init-app');
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+  try {
+    await initApplicationWorkflow({
+      root,
+      appId: 'repository-validate-app',
+      repository: 'Sdkwork-Cloud/repository-validate-app',
+      profiles: ['server', 'tablet'],
+    });
+    const config = await loadWorkflowConfig(path.join(root, 'sdkwork.workflow.json'));
+    const configIssues = validateWorkflowConfig(config);
+    issues.push(...configIssues.map((issue) => `generated init-app config: ${issue}`));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   const issues = [];
   REQUIRED_FILES.forEach((filePath) => requireFile(filePath, issues));
@@ -79,6 +100,7 @@ async function main() {
     validateYamlText(filePath, issues);
   }
   await validateExamples(issues);
+  await validateGenerator(issues);
 
   if (issues.length > 0) {
     console.error('[repository-validate] failed:');

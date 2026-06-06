@@ -11,6 +11,8 @@ import {
   createDependencyPlan,
   createToolchainPlan,
   createDeploymentMatrix,
+  initApplicationWorkflow,
+  main,
   validateWorkflowConfig,
 } from '../scripts/sdkwork-workflow.mjs';
 
@@ -399,6 +401,102 @@ test('loads dependency refs file with UTF-8 BOM', async () => {
   });
 });
 
+test('initializes an application workflow without overwriting existing files', async () => {
+  const root = path.join(tempRoot, 'init-app');
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+
+  const result = await initApplicationWorkflow({
+    root,
+    appId: 'demo-app',
+    appName: 'Demo App',
+    repository: 'Sdkwork-Cloud/demo-app',
+    profiles: ['server', 'desktop', 'tablet'],
+    frameworkRef: 'v1',
+  });
+
+  assert.equal(result.written.length, 2);
+  const config = await loadWorkflowConfig(path.join(root, 'sdkwork.workflow.json'));
+  assert.deepEqual(validateWorkflowConfig(config), []);
+  assert.equal(config.app.id, 'demo-app');
+  assert.ok(config.targets.some((target) => target.profile === 'tablet'));
+  const workflow = await import('node:fs/promises').then((fs) =>
+    fs.readFile(path.join(root, '.github/workflows/package.yml'), 'utf8')
+  );
+  assert.ok(workflow.includes('Sdkwork-Cloud/sdkwork-github-workflow/.github/workflows/sdkwork-package.yml@v1'));
+
+  await assert.rejects(
+    () => initApplicationWorkflow({
+      root,
+      appId: 'demo-app',
+      repository: 'Sdkwork-Cloud/demo-app',
+      profiles: ['server'],
+    }),
+    /already exists/,
+  );
+});
+
+test('CLI init-app does not require an existing workflow config', async () => {
+  const root = path.join(tempRoot, 'init-app-cli');
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+
+  const previousWrite = process.stdout.write;
+  let output = '';
+  process.stdout.write = (chunk) => {
+    output += chunk;
+    return true;
+  };
+
+  try {
+    assert.equal(await main([
+      'init-app',
+      '--root',
+      root,
+      '--app-id',
+      'cli-demo',
+      '--app-name',
+      'CLI Demo',
+      '--repository',
+      'Sdkwork-Cloud/cli-demo',
+      '--profiles',
+      'server,tablet',
+      '--json',
+    ]), 0);
+  } finally {
+    process.stdout.write = previousWrite;
+  }
+
+  const result = JSON.parse(output);
+  assert.equal(result.ok, true);
+  const config = await loadWorkflowConfig(path.join(root, 'sdkwork.workflow.json'));
+  assert.deepEqual(validateWorkflowConfig(config), []);
+  assert.ok(config.targets.some((target) => target.profile === 'tablet'));
+});
+
+test('init-app rejects invalid application identity before writing files', async () => {
+  const root = path.join(tempRoot, 'init-app-invalid');
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+
+  await assert.rejects(
+    () => initApplicationWorkflow({
+      root,
+      appId: 'Invalid App',
+      repository: 'Sdkwork-Cloud/demo-app',
+    }),
+    /appId must match/,
+  );
+  await assert.rejects(
+    () => initApplicationWorkflow({
+      root,
+      appId: 'demo-app',
+      repository: 'not-a-github-repository',
+    }),
+    /repository must match/,
+  );
+});
+
 test('creates normalized toolchain plan with empty defaults', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
@@ -644,6 +742,33 @@ test('creates lifecycle command plan with deployment environment values', () => 
   assert.equal(plan.steps[0].env.SDKWORK_DEPLOY_ENVIRONMENT, 'production');
   assert.equal(plan.steps[0].env.SDKWORK_DEPLOY_URL, 'https://demo.sdkwork.com');
   assert.equal(plan.steps[0].env.SDKWORK_DEPLOY_LIFECYCLE, 'deploy');
+});
+
+test('uses PowerShell by default for Windows tablet lifecycle targets', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'tablet-demo', repository: 'Org/tablet-demo' },
+    release: { artifactPrefix: 'tablet-demo' },
+    lifecycle: {
+      package: [{ run: 'Write-Output $env:SDKWORK_PACKAGE_ID' }],
+    },
+    targets: [
+      {
+        id: 'windows-tablet-x64-msix',
+        profile: 'tablet',
+        platform: 'windows-tablet',
+        architecture: 'x64',
+        formats: ['msix'],
+        runner: 'windows-2022',
+        outputGlobs: ['dist/tablet/*.msix'],
+      },
+    ],
+  };
+
+  const matrix = createPackageMatrix(config, { platform: 'windows-tablet', format: 'msix' });
+  const plan = createLifecyclePlan(config, { phase: 'package', matrixItem: matrix.include[0] });
+
+  assert.equal(plan.steps[0].shell, 'pwsh');
 });
 
 test('validates checked-in example configurations', async () => {

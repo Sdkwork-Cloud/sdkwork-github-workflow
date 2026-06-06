@@ -35,6 +35,25 @@ The framework keeps application repositories thin:
 
 ## Application Integration
 
+Use the generator for a new application repository:
+
+```bash
+node scripts/sdkwork-workflow.mjs init-app \
+  --root D:/sdkwork-opensource/my-app \
+  --app-id my-app \
+  --app-name "My App" \
+  --repository Sdkwork-Cloud/my-app \
+  --profiles server,desktop,tablet \
+  --framework-ref v1
+```
+
+The generator writes:
+
+- `sdkwork.workflow.json`
+- `.github/workflows/package.yml`
+
+It refuses to overwrite existing files unless `--force` is passed.
+
 Add `sdkwork.workflow.json` to the application repository:
 
 ```json
@@ -259,6 +278,16 @@ node scripts/sdkwork-workflow.mjs dependencies \
   --config examples/sdkwork-claw-router/sdkwork.workflow.json \
   --dependency-refs-file refs.json \
   --json
+```
+
+Generate an application bootstrap:
+
+```bash
+node scripts/sdkwork-workflow.mjs init-app \
+  --root ../my-app \
+  --app-id my-app \
+  --repository Sdkwork-Cloud/my-app \
+  --profiles server,tablet
 ```
 
 ## Security Baseline
