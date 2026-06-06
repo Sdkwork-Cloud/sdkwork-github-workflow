@@ -495,7 +495,7 @@ function resolvedDependencyPath(dependency) {
     return dependency.path;
   }
   if (typeof dependency?.id === 'string' && dependency.id.trim() !== '') {
-    return `dependencies/${dependency.id}`;
+    return `.sdkwork/dependencies/${dependency.id}`;
   }
   return null;
 }
@@ -1136,7 +1136,7 @@ function createDependencyPlan(config, inputRefs = {}) {
         id: dependency.id,
         repository: dependency.repository,
         ref,
-        path: dependency.path ?? `dependencies/${dependency.id}`,
+        path: resolvedDependencyPath(dependency),
         tokenSecret: dependency.tokenSecret ?? null,
         submodules: dependency.submodules ?? false,
       };

@@ -812,7 +812,7 @@ test('rejects dependency checkout paths that collide with application or framewo
   );
 });
 
-test('rejects default dependency checkout path when it overlaps application source path', () => {
+test('rejects explicit dependency checkout path when it overlaps application source path', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
     app: { id: 'default-dependency-path', repository: 'Org/default-dependency-path', sourcePath: 'dependencies/sdkwork-core' },
@@ -821,6 +821,7 @@ test('rejects default dependency checkout path when it overlaps application sour
       {
         id: 'sdkwork-core',
         repository: 'Sdkwork-Cloud/sdkwork-core',
+        path: 'dependencies/sdkwork-core',
       },
     ],
     targets: [
@@ -838,6 +839,37 @@ test('rejects default dependency checkout path when it overlaps application sour
 
   const issues = validateWorkflowConfig(config);
   assert.ok(issues.some((issue) => issue.includes('dependencies[0].path must not overlap app.sourcePath')));
+});
+
+test('plans default dependency checkout under sdkwork dependencies for repository-root applications', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'repo-root-app', repository: 'Org/repo-root-app', sourcePath: '.' },
+    release: { artifactPrefix: 'repo-root-app' },
+    dependencies: [
+      {
+        id: 'sdkwork-core',
+        repository: 'Sdkwork-Cloud/sdkwork-core',
+        ref: 'main',
+      },
+    ],
+    targets: [
+      {
+        id: 'linux-x64-server-tar-gz',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+    ],
+  };
+
+  assert.deepEqual(validateWorkflowConfig(config), []);
+
+  const plan = createDependencyPlan(config);
+  assert.equal(plan.include[0].path, '.sdkwork/dependencies/sdkwork-core');
 });
 
 test('rejects unsafe lifecycle working directories and non-string step environment values', () => {
