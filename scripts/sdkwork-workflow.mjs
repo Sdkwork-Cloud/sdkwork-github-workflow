@@ -1357,15 +1357,15 @@ jobs:
     uses: Sdkwork-Cloud/sdkwork-github-workflow/.github/workflows/sdkwork-package.yml@${frameworkRef}
     with:
       config_path: sdkwork.workflow.json
-      tag: \${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
-      package_version: \${{ inputs.package_version || github.event.release.tag_name || github.ref_name }}
-      platform: \${{ inputs.platform || 'all' }}
-      architecture: \${{ inputs.architecture || 'all' }}
-      profile: \${{ inputs.profile || 'all' }}
-      format: \${{ inputs.format || 'all' }}
+      tag: \${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
+      package_version: \${{ github.event.inputs.package_version || github.event.release.tag_name || github.ref_name }}
+      platform: \${{ github.event.inputs.platform || 'all' }}
+      architecture: \${{ github.event.inputs.architecture || 'all' }}
+      profile: \${{ github.event.inputs.profile || 'all' }}
+      format: \${{ github.event.inputs.format || 'all' }}
       publish_release: true
       upload_artifact: true
-      deploy: \${{ inputs.deploy || github.event_name == 'release' }}
+      deploy: \${{ github.event.inputs.deploy == 'true' || github.event_name == 'release' }}
       retention_days: 30
       framework_ref: ${frameworkRef}
       dependency_refs_json: >-

@@ -167,3 +167,18 @@
 - [x] Inject dependency ref variables into generated workflow.
 - [x] Run full local verification.
 - [x] Commit application git trigger standardization.
+
+### Task 11: Multi-Event Application Input Compatibility
+
+**Files:**
+- Modify: `scripts/sdkwork-workflow.mjs`
+- Modify: `templates/app-package.workflow.yml`
+- Modify: `tests/sdkwork-workflow.test.mjs`
+- Modify: `README.md`
+
+- [x] Write failing tests for event-safe generated workflow expressions.
+- [x] Use `github.event.inputs.*` for manual input fallback in multi-event application workflows.
+- [x] Keep release tag and pushed tag fallbacks for non-manual events.
+- [x] Compare deploy input explicitly to the string `true` so manual `false` stays false.
+- [x] Run full local verification.
+- [x] Commit multi-event input compatibility.

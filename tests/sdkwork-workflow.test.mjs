@@ -466,8 +466,9 @@ test('initializes an application workflow without overwriting existing files', a
   );
   assert.ok(workflow.includes('push:'));
   assert.ok(workflow.includes('release:'));
-  assert.ok(workflow.includes("tag: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}"));
-  assert.ok(workflow.includes("package_version: ${{ inputs.package_version || github.event.release.tag_name || github.ref_name }}"));
+  assert.ok(workflow.includes("tag: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}"));
+  assert.ok(workflow.includes("package_version: ${{ github.event.inputs.package_version || github.event.release.tag_name || github.ref_name }}"));
+  assert.ok(workflow.includes("deploy: ${{ github.event.inputs.deploy == 'true' || github.event_name == 'release' }}"));
   assert.ok(workflow.includes('Sdkwork-Cloud/sdkwork-github-workflow/.github/workflows/sdkwork-package.yml@v1'));
   assert.ok(workflow.includes('dependency_refs_json: >-'));
   assert.ok(workflow.includes('SDKWORK_APPBASE_REF'));

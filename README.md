@@ -132,13 +132,13 @@ jobs:
     uses: Sdkwork-Cloud/sdkwork-github-workflow/.github/workflows/sdkwork-package.yml@v1
     with:
       config_path: sdkwork.workflow.json
-      tag: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
-      package_version: ${{ inputs.package_version || github.event.release.tag_name || github.ref_name }}
-      platform: ${{ inputs.platform || 'all' }}
-      architecture: ${{ inputs.architecture || 'all' }}
-      profile: ${{ inputs.profile || 'all' }}
-      format: ${{ inputs.format || 'all' }}
-      deploy: ${{ inputs.deploy || github.event_name == 'release' }}
+      tag: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
+      package_version: ${{ github.event.inputs.package_version || github.event.release.tag_name || github.ref_name }}
+      platform: ${{ github.event.inputs.platform || 'all' }}
+      architecture: ${{ github.event.inputs.architecture || 'all' }}
+      profile: ${{ github.event.inputs.profile || 'all' }}
+      format: ${{ github.event.inputs.format || 'all' }}
+      deploy: ${{ github.event.inputs.deploy == 'true' || github.event_name == 'release' }}
       framework_ref: v1
     secrets: inherit
 ```
