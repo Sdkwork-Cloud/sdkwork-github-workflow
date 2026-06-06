@@ -357,7 +357,7 @@ jobs:
 
       - id: changelog
         name: Render release changelog
-        if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease }}
+        if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease && !fromJson(needs.plan.outputs.summary_json).publish.aggregateRelease }}
         shell: bash
         env:
           SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
@@ -383,12 +383,111 @@ jobs:
             --github-output
 
       - name: Upload assets to GitHub Release
-        if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease }}
+        if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease && !fromJson(needs.plan.outputs.summary_json).publish.aggregateRelease }}
         uses: ./.sdkwork/github-workflow/actions/publish-release
         with:
           tag: ${{ inputs.tag || github.ref_name }}
           repository: ${{ github.repository }}
           files: ${{ matrix.outputGlobsText }}
+          notes-file: ${{ steps.changelog.outputs.notes_path }}
+          clobber: 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+  publish:
+    name: Publish aggregate GitHub release
+    needs:
+      - plan
+      - package
+    if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease && fromJson(needs.plan.outputs.summary_json).publish.aggregateRelease }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SDKWORK_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
+      SDKWORK_PACKAGE_ID: aggregate-release
+      SDKWORK_PACKAGE_TARGET_ID: aggregate-release
+      SDKWORK_PACKAGE_PROFILE: library
+      SDKWORK_PACKAGE_PLATFORM: web
+      SDKWORK_PACKAGE_ARCHITECTURE: noarch
+      SDKWORK_PACKAGE_FORMAT: zip
+      GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+    steps:
+      - name: Checkout application source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+      - name: Checkout workflow framework
+        uses: actions/checkout@v4
+        with:
+          repository: Sdkwork-Cloud/sdkwork-github-workflow
+          ref: ${{ inputs.framework_ref }}
+          path: .sdkwork/github-workflow
+          fetch-depth: 1
+          token: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+      - name: Set up declared toolchains
+        uses: ./.sdkwork/github-workflow/actions/setup-toolchains
+        with:
+          config-path: ${{ inputs.config_path }}
+
+      - name: Download aggregate package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*'
+          path: ${{ fromJson(needs.plan.outputs.summary_json).publish.aggregateArtifactPath }}
+          merge-multiple: true
+
+      - name: Run aggregate publish lifecycle
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: publish
+          target-id: ${{ fromJson(needs.plan.outputs.matrix).include[0].id }}
+          platform: ${{ fromJson(needs.plan.outputs.matrix).include[0].platform }}
+          architecture: ${{ fromJson(needs.plan.outputs.matrix).include[0].architecture }}
+          profile: ${{ fromJson(needs.plan.outputs.matrix).include[0].profile }}
+          format: ${{ fromJson(needs.plan.outputs.matrix).include[0].format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}
+          aggregate-release: 'true'
+
+      - id: changelog
+        name: Render release changelog
+        shell: bash
+        env:
+          SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
+          SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
+          SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
+          SDKWORK_FILTER_VARIANT: ${{ inputs.variant }}
+          SDKWORK_FILTER_FORMAT: ${{ inputs.format }}
+          SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
+          SDKWORK_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs changelog \
+            --config "${SDKWORK_CONFIG_PATH}" \
+            --platform "${SDKWORK_FILTER_PLATFORM}" \
+            --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
+            --profile "${SDKWORK_FILTER_PROFILE}" \
+            --variant "${SDKWORK_FILTER_VARIANT}" \
+            --format "${SDKWORK_FILTER_FORMAT}" \
+            --version "${SDKWORK_PACKAGE_VERSION}" \
+            --release-tag "${SDKWORK_RELEASE_TAG}" \
+            --output .sdkwork/release/release-notes.md \
+            --github-output
+
+      - name: Upload aggregate assets to GitHub Release
+        uses: ./.sdkwork/github-workflow/actions/publish-release
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
+          repository: ${{ github.repository }}
+          files: ${{ fromJson(needs.plan.outputs.summary_json).publish.aggregateUploadGlobsText }}
           notes-file: ${{ steps.changelog.outputs.notes_path }}
           clobber: 'true'
         env:

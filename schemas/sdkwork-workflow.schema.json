@@ -324,6 +324,24 @@
         "githubRelease": {
           "type": "boolean"
         },
+        "aggregateRelease": {
+          "type": "boolean",
+          "description": "When true, package jobs upload workflow artifacts and a final publish job downloads them, runs lifecycle.publish, renders notes, and uploads the aggregated release assets."
+        },
+        "aggregateArtifactPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Safe relative directory used by the aggregate publish job when downloading package artifacts."
+        },
+        "aggregateUploadGlobs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "File globs uploaded by the aggregate publish job after lifecycle.publish runs."
+        },
         "retentionDays": {
           "type": "integer",
           "minimum": 1,

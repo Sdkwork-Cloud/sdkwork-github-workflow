@@ -97,7 +97,14 @@ const TOOLCHAIN_BOOLEAN_KEYS = Object.freeze(['android', 'xcode']);
 const LIFECYCLE_STEP_KEYS = Object.freeze(['name', 'run', 'shell', 'workingDirectory', 'env']);
 const TARGET_CONFIG_KEYS = Object.freeze(['id', 'packageId', 'profile', 'platform', 'distribution', 'architecture', 'variant', 'formats', 'runner', 'outputGlobs', 'environment', 'signing']);
 const SECURITY_CONFIG_KEYS = Object.freeze(['oidcRequired', 'artifactAttestations', 'sbomRequired', 'signingRequired']);
-const PUBLISH_CONFIG_KEYS = Object.freeze(['workflowArtifact', 'githubRelease', 'retentionDays']);
+const PUBLISH_CONFIG_KEYS = Object.freeze([
+  'workflowArtifact',
+  'githubRelease',
+  'aggregateRelease',
+  'aggregateArtifactPath',
+  'aggregateUploadGlobs',
+  'retentionDays',
+]);
 const DEPLOYMENT_CONFIG_KEYS = Object.freeze(['id', 'environment', 'url', 'runner', 'profile', 'platform', 'architecture', 'variant', 'format', 'targetId', 'packageId', 'lifecycle']);
 const CHANGELOG_CONFIG_KEYS = Object.freeze(['enabled', 'source', 'path', 'includeCommitSubjects', 'maxCommitSubjects']);
 const SUPPORTED_CHANGELOG_SOURCES = Object.freeze(['auto', 'app-manifest', 'file', 'git', 'none']);
@@ -132,6 +139,8 @@ Options:
   --deploy-url <value>   Deployment URL exposed to lifecycle steps.
   --deploy-lifecycle <value>
                          Deployment lifecycle label exposed to lifecycle steps.
+  --aggregate-release <true|false>
+                         Use aggregate GitHub Release lifecycle context.
   --output <path>         Output path for changelog command.
   --dependency-refs-json <json>
                          JSON object mapping dependency ref input names to refs.
@@ -169,6 +178,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     deployEnvironment: null,
     deployUrl: null,
     deployLifecycle: null,
+    aggregateRelease: false,
     outputPath: '.sdkwork/release/release-notes.md',
     dependencyRefsJson: null,
     dependencyRefsFile: null,
@@ -241,6 +251,10 @@ function parseArgs(argv = process.argv.slice(2)) {
         settings.deployLifecycle = requireValue(argv, index, arg);
         index += 1;
         break;
+      case '--aggregate-release':
+        settings.aggregateRelease = parseBooleanOption(requireValue(argv, index, arg), arg);
+        index += 1;
+        break;
       case '--output':
         settings.outputPath = requireValue(argv, index, arg);
         index += 1;
@@ -307,6 +321,16 @@ function requireValue(argv, index, flag) {
     throw new Error(`${flag} requires a value`);
   }
   return value;
+}
+
+function parseBooleanOption(value, flag) {
+  if (value === 'true') {
+    return true;
+  }
+  if (value === 'false') {
+    return false;
+  }
+  throw new Error(`${flag} must be true or false`);
 }
 
 async function loadWorkflowConfig(configPath = 'sdkwork.workflow.json') {
@@ -806,6 +830,20 @@ function validatePublish(publish, issues) {
   if (publish?.workflowArtifact !== undefined && typeof publish.workflowArtifact !== 'boolean') {
     issues.push('publish.workflowArtifact must be a boolean');
   }
+  if (publish?.aggregateRelease !== undefined && typeof publish.aggregateRelease !== 'boolean') {
+    issues.push('publish.aggregateRelease must be a boolean');
+  }
+  if (publish?.aggregateArtifactPath !== undefined) {
+    validateOptionalSafeRelativePath(publish.aggregateArtifactPath, 'publish.aggregateArtifactPath', issues);
+  }
+  if (publish?.aggregateUploadGlobs !== undefined) {
+    validateArray(publish.aggregateUploadGlobs, 'publish.aggregateUploadGlobs', issues, { minLength: 1 });
+    if (Array.isArray(publish.aggregateUploadGlobs)) {
+      publish.aggregateUploadGlobs.forEach((glob, index) =>
+        validateRequiredString(glob, `publish.aggregateUploadGlobs[${index}]`, issues)
+      );
+    }
+  }
   if (publish?.retentionDays !== undefined) {
     if (!Number.isInteger(publish.retentionDays) || publish.retentionDays < 1 || publish.retentionDays > 90) {
       issues.push('publish.retentionDays must be an integer from 1 to 90');
@@ -1248,6 +1286,10 @@ function createWorkflowSummary(config, matrix, { version = null, releaseTag = nu
     publish: {
       workflowArtifact: config.publish?.workflowArtifact !== false,
       githubRelease: config.publish?.githubRelease !== false,
+      aggregateRelease: config.publish?.aggregateRelease === true,
+      aggregateArtifactPath: config.publish?.aggregateArtifactPath ?? 'release-assets',
+      aggregateUploadGlobs: config.publish?.aggregateUploadGlobs ?? ['release-assets/**/*'],
+      aggregateUploadGlobsText: (config.publish?.aggregateUploadGlobs ?? ['release-assets/**/*']).join('\n'),
       retentionDays: config.publish?.retentionDays ?? null,
     },
     security: {
@@ -1488,6 +1530,7 @@ function createLifecyclePlan(config, {
   version = null,
   releaseTag = null,
   root = process.cwd(),
+  aggregateRelease = false,
 } = {}) {
   const issues = validateWorkflowConfig(config);
   if (issues.length > 0) {
@@ -1504,30 +1547,49 @@ function createLifecyclePlan(config, {
     throw new Error(`lifecycle.${phase} must be an array`);
   }
 
+  const effectiveMatrixItem = aggregateRelease
+    ? {
+        id: 'aggregate-release',
+        packageId: 'aggregate-release',
+        profile: 'library',
+        platform: 'web',
+        architecture: 'noarch',
+        format: 'zip',
+      }
+    : matrixItem;
+  const aggregateUploadGlobs = config.publish?.aggregateUploadGlobs ?? ['release-assets/**/*'];
+  const aggregateEnv = aggregateRelease
+    ? {
+        SDKWORK_RELEASE_AGGREGATE: 'true',
+        SDKWORK_AGGREGATE_ARTIFACT_PATH: config.publish?.aggregateArtifactPath ?? 'release-assets',
+        SDKWORK_AGGREGATE_UPLOAD_GLOBS: aggregateUploadGlobs.join('\n'),
+      }
+    : {};
   const baseEnv = {
     SDKWORK_APP_ID: config.app.id,
     SDKWORK_APP_REPOSITORY: config.app.repository,
     SDKWORK_APP_SOURCE_PATH: config.app.sourcePath ?? '.',
-    SDKWORK_PACKAGE_ARCHITECTURE: matrixItem.architecture,
-    SDKWORK_PACKAGE_FORMAT: matrixItem.format,
-    SDKWORK_PACKAGE_ID: matrixItem.packageId,
-    SDKWORK_PACKAGE_PLATFORM: matrixItem.platform,
-    SDKWORK_PACKAGE_PROFILE: matrixItem.profile,
-    SDKWORK_PACKAGE_TARGET_ID: matrixItem.id,
+    SDKWORK_PACKAGE_ARCHITECTURE: effectiveMatrixItem.architecture,
+    SDKWORK_PACKAGE_FORMAT: effectiveMatrixItem.format,
+    SDKWORK_PACKAGE_ID: effectiveMatrixItem.packageId,
+    SDKWORK_PACKAGE_PLATFORM: effectiveMatrixItem.platform,
+    SDKWORK_PACKAGE_PROFILE: effectiveMatrixItem.profile,
+    SDKWORK_PACKAGE_TARGET_ID: effectiveMatrixItem.id,
     SDKWORK_PACKAGE_VERSION: resolvePackageVersion(config, { version, releaseTag }) || '',
     SDKWORK_RELEASE_TAG: releaseTag || '',
-    ...(matrixItem.distribution ? { SDKWORK_PACKAGE_DISTRIBUTION: matrixItem.distribution } : {}),
-    ...(matrixItem.variant ? { SDKWORK_PACKAGE_VARIANT: matrixItem.variant } : {}),
-    ...(matrixItem.environment ? { SDKWORK_DEPLOY_ENVIRONMENT: matrixItem.environment } : {}),
-    ...(matrixItem.url ? { SDKWORK_DEPLOY_URL: matrixItem.url } : {}),
-    ...(matrixItem.lifecycle ? { SDKWORK_DEPLOY_LIFECYCLE: matrixItem.lifecycle } : {}),
+    ...aggregateEnv,
+    ...(effectiveMatrixItem.distribution ? { SDKWORK_PACKAGE_DISTRIBUTION: effectiveMatrixItem.distribution } : {}),
+    ...(effectiveMatrixItem.variant ? { SDKWORK_PACKAGE_VARIANT: effectiveMatrixItem.variant } : {}),
+    ...(effectiveMatrixItem.environment ? { SDKWORK_DEPLOY_ENVIRONMENT: effectiveMatrixItem.environment } : {}),
+    ...(effectiveMatrixItem.url ? { SDKWORK_DEPLOY_URL: effectiveMatrixItem.url } : {}),
+    ...(effectiveMatrixItem.lifecycle ? { SDKWORK_DEPLOY_LIFECYCLE: effectiveMatrixItem.lifecycle } : {}),
   };
 
   return {
     phase,
     steps: configuredSteps.map((step, index) => ({
       name: step.name ?? `${phase} step ${index + 1}`,
-      shell: step.shell ?? defaultShellForMatrixItem(matrixItem),
+      shell: step.shell ?? defaultShellForMatrixItem(effectiveMatrixItem),
       workingDirectory: path.resolve(root, step.workingDirectory ?? config.app.sourcePath ?? '.'),
       run: step.run ?? null,
       ...(step.uses ? { uses: step.uses } : {}),
@@ -2215,6 +2277,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
       },
       version: settings.version,
       releaseTag: settings.releaseTag,
+      aggregateRelease: settings.aggregateRelease,
     });
     if (settings.githubOutput) {
       await writeGithubOutputs({

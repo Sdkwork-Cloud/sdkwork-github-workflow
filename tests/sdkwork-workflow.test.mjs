@@ -1175,6 +1175,9 @@ test('summarizes publication and supply chain policy for reusable workflow jobs'
     publish: {
       workflowArtifact: false,
       githubRelease: false,
+      aggregateRelease: true,
+      aggregateArtifactPath: 'release-assets',
+      aggregateUploadGlobs: ['release-assets/**/*'],
       retentionDays: 7,
     },
   };
@@ -1184,6 +1187,10 @@ test('summarizes publication and supply chain policy for reusable workflow jobs'
   assert.deepEqual(summary.publish, {
     workflowArtifact: false,
     githubRelease: false,
+    aggregateRelease: true,
+    aggregateArtifactPath: 'release-assets',
+    aggregateUploadGlobs: ['release-assets/**/*'],
+    aggregateUploadGlobsText: 'release-assets/**/*',
     retentionDays: 7,
   });
   assert.deepEqual(summary.security, {
@@ -1974,6 +1981,54 @@ test('creates lifecycle command plan with deployment environment values', () => 
   assert.equal(plan.steps[0].env.SDKWORK_DEPLOY_LIFECYCLE, 'deploy');
 });
 
+test('creates aggregate publish lifecycle plan with aggregate release context', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'aggregate-demo', repository: 'Org/aggregate-demo', sourcePath: 'apps/demo' },
+    release: { artifactPrefix: 'aggregate-demo', defaultVersion: '1.2.3' },
+    lifecycle: {
+      publish: [{ run: 'echo "$SDKWORK_PACKAGE_ID"' }],
+    },
+    targets: [
+      {
+        id: 'windows-x64-desktop-msi',
+        packageId: 'windows-x64-desktop-msi',
+        profile: 'desktop',
+        platform: 'windows',
+        architecture: 'x64',
+        formats: ['msi'],
+        runner: 'windows-2022',
+        outputGlobs: ['dist/*.msi'],
+      },
+    ],
+    publish: {
+      aggregateRelease: true,
+      aggregateArtifactPath: 'release-assets',
+      aggregateUploadGlobs: ['release-assets/**/*'],
+    },
+  };
+
+  const matrix = createPackageMatrix(config);
+  const plan = createLifecyclePlan(config, {
+    phase: 'publish',
+    matrixItem: matrix.include[0],
+    aggregateRelease: true,
+    version: '2.0.0',
+    releaseTag: 'release-2.0.0',
+  });
+
+  assert.equal(plan.steps[0].shell, 'bash');
+  assert.equal(plan.steps[0].env.SDKWORK_RELEASE_AGGREGATE, 'true');
+  assert.equal(plan.steps[0].env.SDKWORK_PACKAGE_ID, 'aggregate-release');
+  assert.equal(plan.steps[0].env.SDKWORK_PACKAGE_TARGET_ID, 'aggregate-release');
+  assert.equal(plan.steps[0].env.SDKWORK_PACKAGE_PROFILE, 'library');
+  assert.equal(plan.steps[0].env.SDKWORK_PACKAGE_PLATFORM, 'web');
+  assert.equal(plan.steps[0].env.SDKWORK_PACKAGE_ARCHITECTURE, 'noarch');
+  assert.equal(plan.steps[0].env.SDKWORK_PACKAGE_FORMAT, 'zip');
+  assert.equal(plan.steps[0].env.SDKWORK_AGGREGATE_ARTIFACT_PATH, 'release-assets');
+  assert.equal(plan.steps[0].env.SDKWORK_AGGREGATE_UPLOAD_GLOBS, 'release-assets/**/*');
+});
+
 test('passes linux distribution through deployment lifecycle matrix items', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
@@ -2209,13 +2264,36 @@ test('reusable workflow gates publication policies and passes deployment context
   assert.match(workflow, /if: \$\{\{ inputs\.upload_artifact && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.workflowArtifact \}\}/u);
   assert.match(workflow, /retention-days: \$\{\{ fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.retentionDays \|\| inputs\.retention_days \}\}/u);
   assert.match(workflow, /if: \$\{\{ fromJson\(needs\.plan\.outputs\.summary_json\)\.security\.artifactAttestations \}\}/u);
-  assert.match(workflow, /if: \$\{\{ inputs\.publish_release && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease \}\}/u);
+  assert.match(
+    workflow,
+    /if: \$\{\{ inputs\.publish_release && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease && !fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateRelease \}\}/u,
+  );
   assert.match(workflow, /name: Render release changelog/u);
   assert.match(workflow, /notes-file: \$\{\{ steps\.changelog\.outputs\.notes_path \}\}/u);
   assert.match(workflow, /deploy-environment: \$\{\{ matrix\.environment \}\}/u);
   assert.match(workflow, /deploy-url: \$\{\{ matrix\.url \}\}/u);
   assert.match(workflow, /deploy-lifecycle: \$\{\{ matrix\.lifecycle \}\}/u);
   assert.match(workflow, /SDKWORK_PACKAGE_VARIANT: \$\{\{ matrix\.variant \}\}/u);
+});
+
+test('reusable workflow supports aggregate GitHub Release publication', async () => {
+  const workflow = await readFile('.github/workflows/sdkwork-package.yml', 'utf8');
+
+  assert.match(workflow, /aggregateRelease/u);
+  assert.match(
+    workflow,
+    /if: \$\{\{ inputs\.publish_release && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease && !fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateRelease \}\}/u,
+  );
+  assert.match(workflow, /\n  publish:\n    name: Publish aggregate GitHub release/u);
+  assert.match(
+    workflow,
+    /if: \$\{\{ inputs\.publish_release && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateRelease \}\}/u,
+  );
+  assert.match(workflow, /uses: actions\/download-artifact@v4/u);
+  assert.match(workflow, /path: \$\{\{ fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateArtifactPath \}\}/u);
+  assert.match(workflow, /phase: publish/u);
+  assert.match(workflow, /aggregate-release: 'true'/u);
+  assert.match(workflow, /files: \$\{\{ fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateUploadGlobsText \}\}/u);
 });
 
 test('reusable workflow passes dependency refs JSON through an environment variable', async () => {
