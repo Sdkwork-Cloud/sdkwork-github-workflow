@@ -11,9 +11,9 @@ The framework keeps application repositories thin:
 ## Design Goals
 
 - One standard packaging contract for all SDKWork applications.
-- Support server, desktop, mobile, web, worker, and library profiles.
-- Support Linux, Windows, macOS, Android, iOS, web, and container targets.
-- Support common package formats: `zip`, `tar.gz`, `deb`, `rpm`, `pkg`, `dmg`, `msi`, `exe`, `appimage`, `snap`, `flatpak`, `docker`, `oci`, `helm`, `apk`, `aab`, `ipa`, `web`, `static`, `jar`, and `war`.
+- Support server, desktop, mobile, tablet, web, worker, and library profiles.
+- Support Linux, Windows, macOS, Android, Android tablet, iOS, iPadOS, Windows tablet, web, and container targets.
+- Support common package formats: `zip`, `tar.gz`, `deb`, `rpm`, `pkg`, `dmg`, `msi`, `msix`, `exe`, `appimage`, `snap`, `flatpak`, `docker`, `oci`, `helm`, `apk`, `aab`, `ipa`, `web`, `static`, `jar`, and `war`.
 - Support declared dependency repositories with ref inputs.
 - Use GitHub Actions reusable workflows and composite actions instead of copied YAML.
 - Align with current CI/CD standards: least-privilege permissions, OIDC-ready publishing, artifact attestations, deterministic matrix planning, and release artifact validation hooks.
@@ -125,7 +125,14 @@ The framework executes configured phases in this order:
 3. `build`
 4. `stage`
 5. `package`
-6. `validate`
+6. `sign`
+7. `sbom`
+8. `validate`
+
+When `deploy: true` is passed to the reusable workflow, it then runs deployment matrix jobs. Each deployment job executes either:
+
+- `deploy`
+- `publish`
 
 Every lifecycle command receives standard environment variables:
 
@@ -140,8 +147,53 @@ Every lifecycle command receives standard environment variables:
 - `SDKWORK_PACKAGE_PLATFORM`
 - `SDKWORK_PACKAGE_ARCHITECTURE`
 - `SDKWORK_PACKAGE_FORMAT`
+- `SDKWORK_DEPLOY_ENVIRONMENT`
+- `SDKWORK_DEPLOY_URL`
+- `SDKWORK_DEPLOY_LIFECYCLE`
 
 Lifecycle steps support `bash`, `sh`, `pwsh`, `powershell`, `cmd`, and `node` shells. They intentionally support `run` commands only. Shared `uses:` actions belong in this framework as composite actions, because GitHub Actions cannot safely materialize dynamic `uses:` steps from runtime configuration.
+
+## Deployment Contract
+
+Deployment targets are declared in `sdkwork.workflow.json`:
+
+```json
+{
+  "deployments": [
+    {
+      "id": "production-server",
+      "environment": "production",
+      "profile": "server",
+      "platform": "linux",
+      "format": "deb",
+      "runner": "ubuntu-24.04",
+      "url": "https://api.sdkwork.com/apps/my-app",
+      "lifecycle": "deploy"
+    }
+  ]
+}
+```
+
+The reusable workflow maps each deployment item to selected package targets and binds the job to GitHub Environments:
+
+```yaml
+environment:
+  name: ${{ matrix.environment }}
+  url: ${{ matrix.url }}
+```
+
+Use GitHub Environment protection rules for production approvals and environment-scoped secrets. Cloud deployment actions should use OIDC where possible instead of static credentials.
+
+## Tablet Packaging
+
+Tablet packages are a first-class profile, not just a mobile variant. Use:
+
+- `profile: "tablet"`
+- `platform: "ipados"` for iPadOS `.ipa` packages
+- `platform: "android-tablet"` for Android tablet `.apk` or `.aab` packages
+- `platform: "windows-tablet"` for Windows tablet `.msix`, `.msi`, or `.exe` packages
+
+The tablet profile lets applications apply tablet-specific layouts, signing identities, app-store channels, package globs, and deployment environments without mixing them into phone-oriented mobile packages.
 
 ## Dependency Contract
 
@@ -163,6 +215,16 @@ Dependencies are declared in `sdkwork.workflow.json`:
 ```
 
 The reusable workflow resolves dependency refs from environment variables, then `actions/checkout-dependencies` checks them out before build phases.
+
+The app workflow template passes refs as `dependency_refs_json`, which keeps the reusable workflow generic:
+
+```yaml
+dependency_refs_json: >-
+  {
+    "SDKWORK_APPBASE_REF": "${{ vars.SDKWORK_APPBASE_REF }}",
+    "SDKWORK_CORE_REF": "${{ vars.SDKWORK_CORE_REF }}"
+  }
+```
 
 ## Local Validation
 
@@ -205,7 +267,8 @@ The reusable workflow uses:
 
 - Explicit permissions: `contents: write`, `actions: read`, `id-token: write`, `attestations: write`, `artifact-metadata: write`.
 - `concurrency` scoped by repository, ref, and selected package dimensions.
-- Artifact attestation through `actions/attest-build-provenance`.
+- Artifact attestation through `actions/attest`.
+- Lifecycle hooks for application-specific signing and SBOM generation.
 - A declarative lifecycle contract so application repositories do not copy release pipeline YAML.
 - Path validation for config paths and output globs.
 - Secret-like value redaction in framework logs.

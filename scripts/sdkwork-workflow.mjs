@@ -7,13 +7,16 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const SCHEMA_VERSION = '2026-06-06.sdkwork.workflow.v1';
-const SUPPORTED_PROFILES = Object.freeze(['server', 'desktop', 'mobile', 'web', 'worker', 'library']);
+const SUPPORTED_PROFILES = Object.freeze(['server', 'desktop', 'mobile', 'tablet', 'web', 'worker', 'library']);
 const SUPPORTED_PLATFORMS = Object.freeze([
   'linux',
   'windows',
   'macos',
   'ios',
+  'ipados',
   'android',
+  'android-tablet',
+  'windows-tablet',
   'web',
   'container',
 ]);
@@ -26,6 +29,7 @@ const SUPPORTED_FORMATS = Object.freeze([
   'pkg',
   'dmg',
   'msi',
+  'msix',
   'exe',
   'appimage',
   'snap',
@@ -54,6 +58,7 @@ function printHelp() {
 Commands:
   validate       Validate an sdkwork.workflow.json file.
   matrix         Render the selected GitHub Actions package matrix.
+  deployments    Render deployment matrix from selected package targets.
   dependencies   Render dependency checkout metadata.
   toolchains     Render declared toolchain setup metadata.
   lifecycle      Render one lifecycle phase execution plan.
@@ -68,6 +73,11 @@ Options:
   --phase <value>        Lifecycle phase for lifecycle command.
   --target-id <value>    Matrix target id for lifecycle command.
   --release-tag <value>  Release tag exposed to lifecycle steps.
+  --deploy-environment <value>
+                         Deployment environment exposed to lifecycle steps.
+  --deploy-url <value>   Deployment URL exposed to lifecycle steps.
+  --deploy-lifecycle <value>
+                         Deployment lifecycle label exposed to lifecycle steps.
   --dependency-refs-json <json>
                          JSON object mapping dependency ref input names to refs.
   --dependency-refs-file <path>
@@ -92,6 +102,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     phase: null,
     targetId: null,
     releaseTag: null,
+    deployEnvironment: null,
+    deployUrl: null,
+    deployLifecycle: null,
     dependencyRefsJson: null,
     dependencyRefsFile: null,
     run: false,
@@ -138,6 +151,18 @@ function parseArgs(argv = process.argv.slice(2)) {
         break;
       case '--release-tag':
         settings.releaseTag = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--deploy-environment':
+        settings.deployEnvironment = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--deploy-url':
+        settings.deployUrl = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--deploy-lifecycle':
+        settings.deployLifecycle = requireValue(argv, index, arg);
         index += 1;
         break;
       case '--dependency-refs-json':
@@ -296,6 +321,15 @@ function validateWorkflowConfig(config) {
   if (config.publish !== undefined) {
     validatePublish(config.publish, issues);
   }
+  if (config.deployments !== undefined) {
+    validateArray(config.deployments, 'deployments', issues);
+    if (Array.isArray(config.deployments)) {
+      const seenDeploymentIds = new Set();
+      config.deployments.forEach((deployment, index) =>
+        validateDeployment(deployment, index, issues, seenDeploymentIds)
+      );
+    }
+  }
 
   return issues;
 }
@@ -324,7 +358,7 @@ function validateDependency(dependency, index, issues) {
 
 function validateLifecycle(lifecycle, issues) {
   validateObject(lifecycle, 'lifecycle', issues);
-  for (const key of ['preflight', 'install', 'build', 'stage', 'package', 'validate', 'publish']) {
+  for (const key of ['preflight', 'install', 'build', 'stage', 'package', 'sign', 'sbom', 'validate', 'deploy', 'publish']) {
     if (lifecycle?.[key] !== undefined) {
       validateArray(lifecycle[key], `lifecycle.${key}`, issues);
       if (Array.isArray(lifecycle[key])) {
@@ -381,6 +415,44 @@ function validateTarget(target, index, issues, seenIds) {
   }
   if (target?.signing !== undefined && typeof target.signing !== 'boolean') {
     issues.push(`${label}.signing must be a boolean`);
+  }
+}
+
+function validateDeployment(deployment, index, issues, seenIds) {
+  const label = `deployments[${index}]`;
+  validateObject(deployment, label, issues);
+  validateRequiredString(deployment?.id, `${label}.id`, issues, { pattern: /^[a-z0-9][a-z0-9._-]*$/u });
+  if (deployment?.id) {
+    if (seenIds.has(deployment.id)) {
+      issues.push(`${label}.id is duplicated: ${deployment.id}`);
+    }
+    seenIds.add(deployment.id);
+  }
+  validateRequiredString(deployment?.environment, `${label}.environment`, issues, {
+    pattern: /^[A-Za-z0-9][A-Za-z0-9._-]*$/u,
+  });
+  validateOptionalString(deployment?.runner, `${label}.runner`, issues);
+  validateOptionalString(deployment?.url, `${label}.url`, issues);
+  if (deployment?.profile !== undefined) {
+    validateEnum(deployment.profile, `${label}.profile`, SUPPORTED_PROFILES, issues);
+  }
+  if (deployment?.platform !== undefined) {
+    validateEnum(deployment.platform, `${label}.platform`, SUPPORTED_PLATFORMS, issues);
+  }
+  if (deployment?.architecture !== undefined) {
+    validateEnum(deployment.architecture, `${label}.architecture`, SUPPORTED_ARCHITECTURES, issues);
+  }
+  if (deployment?.format !== undefined) {
+    validateEnum(deployment.format, `${label}.format`, SUPPORTED_FORMATS, issues);
+  }
+  if (deployment?.targetId !== undefined) {
+    validateOptionalString(deployment.targetId, `${label}.targetId`, issues, { pattern: /^[a-z0-9][a-z0-9._-]*$/u });
+  }
+  if (deployment?.packageId !== undefined) {
+    validateOptionalString(deployment.packageId, `${label}.packageId`, issues, { pattern: /^[a-z0-9][a-z0-9._-]*$/u });
+  }
+  if (deployment?.lifecycle !== undefined && !['deploy', 'publish'].includes(String(deployment.lifecycle))) {
+    issues.push(`${label}.lifecycle must be deploy or publish`);
   }
 }
 
@@ -543,6 +615,48 @@ function createPackageMatrix(config, filters = {}) {
   return { include };
 }
 
+function createDeploymentMatrix(config, { packageMatrix = null, filters = {} } = {}) {
+  const issues = validateWorkflowConfig(config);
+  if (issues.length > 0) {
+    throw new Error(`Invalid workflow config: ${issues.join('; ')}`);
+  }
+  const deployments = config.deployments ?? [];
+  const selectedPackages = packageMatrix ?? createPackageMatrix(config, filters);
+  const include = [];
+
+  for (const deployment of deployments) {
+    for (const packageItem of selectedPackages.include) {
+      if (!deploymentMatchesPackage(deployment, packageItem)) {
+        continue;
+      }
+      include.push({
+        id: deployment.id,
+        environment: deployment.environment,
+        ...(deployment.url ? { url: deployment.url } : {}),
+        runner: deployment.runner ?? packageItem.runner,
+        lifecycle: deployment.lifecycle ?? 'deploy',
+        targetId: packageItem.id,
+        packageId: packageItem.packageId,
+        profile: packageItem.profile,
+        platform: packageItem.platform,
+        architecture: packageItem.architecture,
+        format: packageItem.format,
+      });
+    }
+  }
+
+  return { include };
+}
+
+function deploymentMatchesPackage(deployment, packageItem) {
+  return matchesFilter(packageItem.profile, deployment.profile ?? 'all')
+    && matchesFilter(packageItem.platform, deployment.platform ?? 'all')
+    && matchesFilter(packageItem.architecture, deployment.architecture ?? 'all')
+    && matchesFilter(packageItem.format, deployment.format ?? 'all')
+    && matchesFilter(packageItem.id, deployment.targetId ?? 'all')
+    && matchesFilter(packageItem.packageId, deployment.packageId ?? 'all');
+}
+
 function matchesFilter(value, filter) {
   return filter === undefined || filter === null || filter === 'all' || value === filter;
 }
@@ -682,6 +796,9 @@ function createLifecyclePlan(config, {
     SDKWORK_PACKAGE_TARGET_ID: matrixItem.id,
     SDKWORK_PACKAGE_VERSION: version || config.release.defaultVersion || '',
     SDKWORK_RELEASE_TAG: releaseTag || '',
+    ...(matrixItem.environment ? { SDKWORK_DEPLOY_ENVIRONMENT: matrixItem.environment } : {}),
+    ...(matrixItem.url ? { SDKWORK_DEPLOY_URL: matrixItem.url } : {}),
+    ...(matrixItem.lifecycle ? { SDKWORK_DEPLOY_LIFECYCLE: matrixItem.lifecycle } : {}),
   };
 
   return {
@@ -891,6 +1008,26 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     return 0;
   }
 
+  if (settings.command === 'deployments') {
+    const packageMatrix = createPackageMatrix(config, settings);
+    const deploymentMatrix = createDeploymentMatrix(config, { packageMatrix });
+    if (settings.githubOutput) {
+      await writeGithubOutputs({
+        deployments: JSON.stringify(deploymentMatrix),
+        deployment_count: String(deploymentMatrix.include.length),
+      }, env);
+    }
+    if (settings.json) {
+      console.log(JSON.stringify({ ok: true, deployments: deploymentMatrix }, null, 2));
+    } else {
+      console.log(`[sdkwork-workflow] deployments: ${deploymentMatrix.include.length}`);
+      deploymentMatrix.include.forEach((item) =>
+        console.log(`[sdkwork-workflow]   ${item.id} env=${item.environment} package=${item.packageId}`)
+      );
+    }
+    return 0;
+  }
+
   if (settings.command === 'dependencies') {
     const dependencyPlan = createDependencyPlan(config, {
       ...env,
@@ -943,7 +1080,12 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     }
     const plan = createLifecyclePlan(config, {
       phase: settings.phase,
-      matrixItem,
+      matrixItem: {
+        ...matrixItem,
+        ...(settings.deployEnvironment ? { environment: settings.deployEnvironment } : {}),
+        ...(settings.deployUrl ? { url: settings.deployUrl } : {}),
+        ...(settings.deployLifecycle ? { lifecycle: settings.deployLifecycle } : {}),
+      },
       version: settings.version,
       releaseTag: settings.releaseTag,
     });
@@ -992,6 +1134,7 @@ export {
   SUPPORTED_PLATFORMS,
   SUPPORTED_PROFILES,
   createDependencyPlan,
+  createDeploymentMatrix,
   createLifecyclePlan,
   createPackageMatrix,
   createToolchainPlan,

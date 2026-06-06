@@ -159,7 +159,16 @@
         "package": {
           "$ref": "#/$defs/steps"
         },
+        "sign": {
+          "$ref": "#/$defs/steps"
+        },
+        "sbom": {
+          "$ref": "#/$defs/steps"
+        },
         "validate": {
+          "$ref": "#/$defs/steps"
+        },
+        "deploy": {
           "$ref": "#/$defs/steps"
         },
         "publish": {
@@ -184,10 +193,10 @@
             "pattern": "^[a-z0-9][a-z0-9._-]*$"
           },
           "profile": {
-            "enum": ["server", "desktop", "mobile", "web", "worker", "library"]
+            "enum": ["server", "desktop", "mobile", "tablet", "web", "worker", "library"]
           },
           "platform": {
-            "enum": ["linux", "windows", "macos", "ios", "android", "web", "container"]
+            "enum": ["linux", "windows", "macos", "ios", "ipados", "android", "android-tablet", "windows-tablet", "web", "container"]
           },
           "architecture": {
             "enum": ["x64", "arm64", "armv7", "universal", "wasm32", "noarch"]
@@ -204,6 +213,7 @@
                 "pkg",
                 "dmg",
                 "msi",
+                "msix",
                 "exe",
                 "appimage",
                 "snap",
@@ -275,6 +285,76 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 90
+        }
+      }
+    },
+    "deployments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "environment"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "environment": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "url": {
+            "type": "string"
+          },
+          "runner": {
+            "type": "string"
+          },
+          "profile": {
+            "enum": ["server", "desktop", "mobile", "tablet", "web", "worker", "library"]
+          },
+          "platform": {
+            "enum": ["linux", "windows", "macos", "ios", "ipados", "android", "android-tablet", "windows-tablet", "web", "container"]
+          },
+          "architecture": {
+            "enum": ["x64", "arm64", "armv7", "universal", "wasm32", "noarch"]
+          },
+          "format": {
+            "enum": [
+              "zip",
+              "tar.gz",
+              "deb",
+              "rpm",
+              "pkg",
+              "dmg",
+              "msi",
+              "msix",
+              "exe",
+              "appimage",
+              "snap",
+              "flatpak",
+              "docker",
+              "oci",
+              "helm",
+              "apk",
+              "aab",
+              "ipa",
+              "web",
+              "static",
+              "jar",
+              "war"
+            ]
+          },
+          "targetId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "packageId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "lifecycle": {
+            "enum": ["deploy", "publish"]
+          }
         }
       }
     }

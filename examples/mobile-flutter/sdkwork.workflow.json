@@ -32,6 +32,16 @@
       {
         "run": "test -n \"$SDKWORK_PACKAGE_ID\""
       }
+    ],
+    "sign": [
+      {
+        "run": "echo \"mobile signing hook for $SDKWORK_PACKAGE_ID\""
+      }
+    ],
+    "publish": [
+      {
+        "run": "echo \"publish $SDKWORK_PACKAGE_ID to $SDKWORK_DEPLOY_ENVIRONMENT\""
+      }
     ]
   },
   "targets": [
@@ -72,5 +82,25 @@
     "workflowArtifact": true,
     "githubRelease": true,
     "retentionDays": 30
-  }
+  },
+  "deployments": [
+    {
+      "id": "android-production",
+      "environment": "production-mobile",
+      "profile": "mobile",
+      "platform": "android",
+      "format": "aab",
+      "runner": "ubuntu-24.04",
+      "lifecycle": "publish"
+    },
+    {
+      "id": "ios-production",
+      "environment": "production-mobile",
+      "profile": "mobile",
+      "platform": "ios",
+      "format": "ipa",
+      "runner": "macos-14",
+      "lifecycle": "publish"
+    }
+  ]
 }

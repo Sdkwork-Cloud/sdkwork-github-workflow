@@ -22,6 +22,7 @@ const REQUIRED_FILES = Object.freeze([
   'templates/app-package.workflow.yml',
   'examples/sdkwork-claw-router/sdkwork.workflow.json',
   'examples/mobile-flutter/sdkwork.workflow.json',
+  'examples/tablet-cross-platform/sdkwork.workflow.json',
   'README.md',
 ]);
 
@@ -51,6 +52,7 @@ async function validateExamples(issues) {
   for (const configPath of [
     'examples/sdkwork-claw-router/sdkwork.workflow.json',
     'examples/mobile-flutter/sdkwork.workflow.json',
+    'examples/tablet-cross-platform/sdkwork.workflow.json',
   ]) {
     const config = await loadWorkflowConfig(configPath);
     const configIssues = validateWorkflowConfig(config);

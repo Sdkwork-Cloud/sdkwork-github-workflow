@@ -22,7 +22,10 @@ on:
           - windows
           - macos
           - android
+          - android-tablet
           - ios
+          - ipados
+          - windows-tablet
           - web
           - container
       architecture:
@@ -48,6 +51,7 @@ on:
           - server
           - desktop
           - mobile
+          - tablet
           - web
           - worker
           - library
@@ -55,6 +59,11 @@ on:
         description: Package format filter.
         required: true
         default: all
+      deploy:
+        description: Run configured deployment environments after packaging.
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -76,6 +85,7 @@ jobs:
       format: ${{ inputs.format }}
       publish_release: true
       upload_artifact: true
+      deploy: ${{ inputs.deploy }}
       retention_days: 30
       framework_ref: v1
       dependency_refs_json: >-

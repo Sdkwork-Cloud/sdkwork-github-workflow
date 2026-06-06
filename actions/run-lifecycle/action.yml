@@ -30,6 +30,18 @@ inputs:
     required: false
     description: Release tag.
     default: ''
+  deploy-environment:
+    required: false
+    description: Deployment environment name.
+    default: ''
+  deploy-url:
+    required: false
+    description: Deployment URL.
+    default: ''
+  deploy-lifecycle:
+    required: false
+    description: Deployment lifecycle label.
+    default: ''
 runs:
   using: composite
   steps:
@@ -46,4 +58,7 @@ runs:
           --format "${{ inputs.format }}" \
           --version "${{ inputs.version }}" \
           --release-tag "${{ inputs.release-tag }}" \
+          --deploy-environment "${{ inputs.deploy-environment }}" \
+          --deploy-url "${{ inputs.deploy-url }}" \
+          --deploy-lifecycle "${{ inputs.deploy-lifecycle }}" \
           --run

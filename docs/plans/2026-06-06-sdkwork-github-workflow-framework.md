@@ -81,3 +81,41 @@
 - [ ] Run full local verification.
 - [ ] Initialize git repository if missing.
 - [ ] Commit framework implementation.
+
+### Task 6: Deployment and Supply Chain Enhancements
+
+**Files:**
+- Modify: `scripts/sdkwork-workflow.mjs`
+- Modify: `schemas/sdkwork-workflow.schema.json`
+- Modify: `.github/workflows/sdkwork-package.yml`
+- Modify: `actions/run-lifecycle/action.yml`
+- Modify: `examples/sdkwork-claw-router/sdkwork.workflow.json`
+- Modify: `examples/mobile-flutter/sdkwork.workflow.json`
+- Modify: `tests/sdkwork-workflow.test.mjs`
+
+- [x] Write failing tests for deployment matrix planning.
+- [x] Implement deployment validation and matrix planning.
+- [x] Add deployment lifecycle environment injection.
+- [x] Add `sign`, `sbom`, `deploy`, and `publish` lifecycle phases.
+- [x] Extend reusable workflow with optional deployment jobs.
+- [x] Bind deployment jobs to GitHub Environments.
+- [x] Update examples for production deployment/store publishing.
+- [ ] Run full local verification.
+- [ ] Commit deployment enhancements.
+
+### Task 7: Tablet Packaging
+
+**Files:**
+- Modify: `scripts/sdkwork-workflow.mjs`
+- Modify: `schemas/sdkwork-workflow.schema.json`
+- Modify: `templates/app-package.workflow.yml`
+- Create: `examples/tablet-cross-platform/sdkwork.workflow.json`
+- Modify: `tests/sdkwork-workflow.test.mjs`
+
+- [x] Write failing tests for tablet profile and tablet platforms.
+- [x] Add `tablet` profile.
+- [x] Add `ipados`, `android-tablet`, and `windows-tablet` platforms.
+- [x] Add `msix` package format.
+- [x] Add tablet example config.
+- [ ] Run full local verification.
+- [ ] Commit tablet packaging enhancements.

@@ -97,6 +97,38 @@
         "workingDirectory": "apps/sdkwork-claw-router",
         "run": "$ErrorActionPreference = \"Stop\"\n$file = Get-ChildItem -Path \"dist/install-packages\" -File |\n  Where-Object { $_.Name -like \"clawrouter-*$env:SDKWORK_PACKAGE_VERSION.*\" -and $_.Name -notlike \"*.manifest.json\" -and $_.Name -notlike \"install-packages-manifest*.json\" } |\n  Select-Object -First 1\nif (-not $file) { throw \"Missing built install package artifact for $env:SDKWORK_PACKAGE_ID\" }\nnode scripts/validate-claw-router-install-artifacts.mjs --package-id $env:SDKWORK_PACKAGE_ID --artifact-path $file.FullName --version $env:SDKWORK_PACKAGE_VERSION"
       }
+    ],
+    "sign": [
+      {
+        "name": "Sign artifacts placeholder",
+        "shell": "pwsh",
+        "workingDirectory": "apps/sdkwork-claw-router",
+        "run": "Write-Host \"Signing policy is configured at the application or environment level for $env:SDKWORK_PACKAGE_ID\""
+      }
+    ],
+    "sbom": [
+      {
+        "name": "SBOM placeholder",
+        "shell": "pwsh",
+        "workingDirectory": "apps/sdkwork-claw-router",
+        "run": "Write-Host \"SBOM generation hook for $env:SDKWORK_PACKAGE_ID\""
+      }
+    ],
+    "deploy": [
+      {
+        "name": "Deploy package placeholder",
+        "shell": "pwsh",
+        "workingDirectory": "apps/sdkwork-claw-router",
+        "run": "Write-Host \"Deploying $env:SDKWORK_PACKAGE_ID to $env:SDKWORK_DEPLOY_ENVIRONMENT at $env:SDKWORK_DEPLOY_URL\""
+      }
+    ],
+    "publish": [
+      {
+        "name": "Publish package placeholder",
+        "shell": "pwsh",
+        "workingDirectory": "apps/sdkwork-claw-router",
+        "run": "Write-Host \"Publishing $env:SDKWORK_PACKAGE_ID through $env:SDKWORK_DEPLOY_ENVIRONMENT\""
+      }
     ]
   },
   "targets": [
@@ -211,5 +243,26 @@
     "workflowArtifact": true,
     "githubRelease": true,
     "retentionDays": 30
-  }
+  },
+  "deployments": [
+    {
+      "id": "production-server-linux",
+      "environment": "production",
+      "profile": "server",
+      "platform": "linux",
+      "format": "deb",
+      "runner": "ubuntu-24.04",
+      "url": "https://api.sdkwork.com/apps/sdkwork-claw-router",
+      "lifecycle": "deploy"
+    },
+    {
+      "id": "production-desktop-windows",
+      "environment": "production-desktop",
+      "profile": "desktop",
+      "platform": "windows",
+      "format": "msi",
+      "runner": "windows-2022",
+      "lifecycle": "publish"
+    }
+  ]
 }

@@ -63,6 +63,11 @@ on:
         required: false
         type: string
         default: '{}'
+      deploy:
+        description: Run configured deployment lifecycle jobs after packaging.
+        required: false
+        type: boolean
+        default: false
     secrets:
       SDKWORK_RELEASE_TOKEN:
         description: Token used for private dependency checkouts and optional release upload.
@@ -89,6 +94,8 @@ jobs:
       summary_json: ${{ steps.plan.outputs.summary_json }}
       dependencies: ${{ steps.dependencies.outputs.dependencies }}
       dependency_count: ${{ steps.dependencies.outputs.dependency_count }}
+      deployments: ${{ steps.deployments.outputs.deployments }}
+      deployment_count: ${{ steps.deployments.outputs.deployment_count }}
     steps:
       - name: Checkout application source
         uses: actions/checkout@v4
@@ -137,6 +144,19 @@ jobs:
           node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs dependencies \
             --config "${{ inputs.config_path }}" \
             --dependency-refs-json '${{ inputs.dependency_refs_json }}' \
+            --github-output
+
+      - id: deployments
+        name: Resolve deployment matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs deployments \
+            --config "${{ inputs.config_path }}" \
+            --platform "${{ inputs.platform }}" \
+            --architecture "${{ inputs.architecture }}" \
+            --profile "${{ inputs.profile }}" \
+            --format "${{ inputs.format }}" \
             --github-output
 
   package:
@@ -199,6 +219,9 @@ jobs:
           format: ${{ matrix.format }}
           version: ${{ inputs.package_version }}
           release-tag: ${{ inputs.tag || github.ref_name }}
+          deploy-environment: ${{ matrix.environment }}
+          deploy-url: ${{ matrix.url }}
+          deploy-lifecycle: ${{ matrix.lifecycle }}
 
       - name: Install
         uses: ./.sdkwork/github-workflow/actions/run-lifecycle
@@ -252,6 +275,32 @@ jobs:
           version: ${{ inputs.package_version }}
           release-tag: ${{ inputs.tag || github.ref_name }}
 
+      - name: Sign artifacts
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: sign
+          target-id: ${{ matrix.id }}
+          platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
+          profile: ${{ matrix.profile }}
+          format: ${{ matrix.format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}
+
+      - name: Generate SBOM
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: sbom
+          target-id: ${{ matrix.id }}
+          platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
+          profile: ${{ matrix.profile }}
+          format: ${{ matrix.format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}
+
       - name: Validate artifacts
         uses: ./.sdkwork/github-workflow/actions/run-lifecycle
         with:
@@ -290,3 +339,72 @@ jobs:
           clobber: 'true'
         env:
           GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+  deploy:
+    name: Deploy ${{ matrix.packageId }} to ${{ matrix.environment }}
+    needs:
+      - plan
+      - package
+    if: inputs.deploy && needs.plan.outputs.deployment_count != '0'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.deployments) }}
+    environment:
+      name: ${{ matrix.environment }}
+      url: ${{ matrix.url }}
+    env:
+      SDKWORK_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
+      SDKWORK_PACKAGE_ID: ${{ matrix.packageId }}
+      SDKWORK_PACKAGE_TARGET_ID: ${{ matrix.targetId }}
+      SDKWORK_PACKAGE_PROFILE: ${{ matrix.profile }}
+      SDKWORK_PACKAGE_PLATFORM: ${{ matrix.platform }}
+      SDKWORK_PACKAGE_ARCHITECTURE: ${{ matrix.architecture }}
+      SDKWORK_PACKAGE_FORMAT: ${{ matrix.format }}
+      SDKWORK_DEPLOY_ENVIRONMENT: ${{ matrix.environment }}
+      SDKWORK_DEPLOY_URL: ${{ matrix.url }}
+      GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+    steps:
+      - name: Checkout application source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+      - name: Checkout workflow framework
+        uses: actions/checkout@v4
+        with:
+          repository: Sdkwork-Cloud/sdkwork-github-workflow
+          ref: ${{ inputs.framework_ref }}
+          path: .sdkwork/github-workflow
+          fetch-depth: 1
+          token: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+      - name: Set up declared toolchains
+        uses: ./.sdkwork/github-workflow/actions/setup-toolchains
+        with:
+          config-path: ${{ inputs.config_path }}
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*${{ matrix.packageId }}*'
+          path: .sdkwork/artifacts
+          merge-multiple: true
+
+      - name: Run deployment lifecycle
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: ${{ matrix.lifecycle }}
+          target-id: ${{ matrix.targetId }}
+          platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
+          profile: ${{ matrix.profile }}
+          format: ${{ matrix.format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}

@@ -75,6 +75,7 @@ The framework supports these profiles:
 - `server`
 - `desktop`
 - `mobile`
+- `tablet`
 - `web`
 - `worker`
 - `library`
@@ -85,7 +86,10 @@ The framework supports these platforms:
 - `windows`
 - `macos`
 - `android`
+- `android-tablet`
 - `ios`
+- `ipados`
+- `windows-tablet`
 - `web`
 - `container`
 
@@ -103,9 +107,10 @@ The framework supports these package formats:
 - Archive: `zip`, `tar.gz`
 - Linux native: `deb`, `rpm`, `appimage`, `snap`, `flatpak`
 - macOS native: `pkg`, `dmg`
-- Windows native: `msi`, `exe`
+- Windows native: `msi`, `msix`, `exe`
 - Container: `docker`, `oci`, `helm`
 - Mobile: `apk`, `aab`, `ipa`
+- Tablet: `apk`, `aab`, `ipa`, `msix`
 - Web/JVM: `web`, `static`, `jar`, `war`
 
 ## Migration From sdkwork-claw-router
@@ -128,7 +133,9 @@ The example `examples/sdkwork-claw-router/sdkwork.workflow.json` maps these into
 - `dependencies` for appbase/core/ui/im-sdk/sdk-generator.
 - `toolchains` for Node, pnpm, Python, Rust, and WiX.
 - lifecycle commands for install, build, stage, package, and validate.
+- lifecycle commands for sign, sbom, deploy, and publish.
 - targets for Linux, Windows, macOS, desktop/server/container packages.
+- deployments for production server rollout and desktop/mobile store publishing.
 
 The per-application workflow shrinks to a reusable workflow call.
 
@@ -141,6 +148,7 @@ The design aligns with current GitHub Actions practices:
 - Minimal explicit permissions.
 - `id-token: write` for OIDC-capable deployment actions.
 - Artifact attestations with build provenance.
+- GitHub Environments for deployment approvals, URLs, and environment-scoped secrets.
 - `concurrency` to prevent accidental overlapping releases.
 - `actions/checkout@v4`, setup actions, and artifact v4.
 - Matrix generation in code with tests instead of duplicated YAML.
@@ -151,6 +159,8 @@ The design aligns with current GitHub Actions practices:
 - Matrix selection fails if filters select no targets.
 - Dependency checkout fails on missing repository/path/ref.
 - Lifecycle execution stops on the first failed step.
+- Deployment jobs are optional and only run when the caller passes `deploy: true`.
+- Deployment jobs bind to the configured GitHub Environment.
 - Upload steps use `if-no-files-found: error`.
 - Application-specific package validation remains a mandatory lifecycle phase for production-grade apps.
 

@@ -1,0 +1,101 @@
+{
+  "$schema": "../../schemas/sdkwork-workflow.schema.json",
+  "schemaVersion": "2026-06-06.sdkwork.workflow.v1",
+  "app": {
+    "id": "sdkwork-tablet-example",
+    "name": "SDKWork Tablet Example",
+    "repository": "Sdkwork-Cloud/sdkwork-tablet-example",
+    "sourcePath": "."
+  },
+  "release": {
+    "artifactPrefix": "sdkwork-tablet-example",
+    "defaultVersion": "0.1.0"
+  },
+  "toolchains": {
+    "node": "22",
+    "java": "21",
+    "flutter": "stable",
+    "android": true,
+    "xcode": true,
+    "dotnet": "9.0.x"
+  },
+  "lifecycle": {
+    "install": [
+      {
+        "run": "flutter pub get"
+      }
+    ],
+    "build": [
+      {
+        "run": "echo \"build tablet package $SDKWORK_PACKAGE_ID for $SDKWORK_PACKAGE_PLATFORM\""
+      }
+    ],
+    "package": [
+      {
+        "run": "echo \"package tablet artifact $SDKWORK_PACKAGE_FORMAT\""
+      }
+    ],
+    "sign": [
+      {
+        "run": "echo \"tablet signing hook for $SDKWORK_PACKAGE_ID\""
+      }
+    ],
+    "validate": [
+      {
+        "run": "test -n \"$SDKWORK_PACKAGE_TARGET_ID\""
+      }
+    ],
+    "publish": [
+      {
+        "run": "echo \"publish tablet package $SDKWORK_PACKAGE_ID to $SDKWORK_DEPLOY_ENVIRONMENT\""
+      }
+    ]
+  },
+  "targets": [
+    {
+      "id": "ipados-universal-tablet-ipa",
+      "profile": "tablet",
+      "platform": "ipados",
+      "architecture": "universal",
+      "formats": ["ipa"],
+      "runner": "macos-14",
+      "outputGlobs": ["build/ipados/ipa/*.ipa"]
+    },
+    {
+      "id": "android-tablet-arm64-aab",
+      "profile": "tablet",
+      "platform": "android-tablet",
+      "architecture": "arm64",
+      "formats": ["aab"],
+      "runner": "ubuntu-24.04",
+      "outputGlobs": ["build/app/outputs/bundle/tabletRelease/*.aab"]
+    },
+    {
+      "id": "windows-tablet-x64-msix",
+      "profile": "tablet",
+      "platform": "windows-tablet",
+      "architecture": "x64",
+      "formats": ["msix"],
+      "runner": "windows-2022",
+      "outputGlobs": ["dist/tablet/*.msix"]
+    }
+  ],
+  "security": {
+    "oidcRequired": true,
+    "artifactAttestations": true,
+    "signingRequired": true
+  },
+  "publish": {
+    "workflowArtifact": true,
+    "githubRelease": true,
+    "retentionDays": 30
+  },
+  "deployments": [
+    {
+      "id": "tablet-production-store",
+      "environment": "production-tablet",
+      "profile": "tablet",
+      "lifecycle": "publish"
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import {
   runLifecyclePlan,
   createDependencyPlan,
   createToolchainPlan,
+  createDeploymentMatrix,
   validateWorkflowConfig,
 } from '../scripts/sdkwork-workflow.mjs';
 
@@ -219,6 +220,57 @@ test('uses package id and format for multi-format artifact names', () => {
   assert.equal(matrix.include[0].artifactName, 'demo-linux-x64-desktop-tar-gz');
 });
 
+test('supports tablet package targets as first-class profile and platforms', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'tablet-demo', repository: 'Org/tablet-demo' },
+    release: { artifactPrefix: 'tablet-demo' },
+    targets: [
+      {
+        id: 'ipados-universal-tablet-ipa',
+        profile: 'tablet',
+        platform: 'ipados',
+        architecture: 'universal',
+        formats: ['ipa'],
+        runner: 'macos-14',
+        outputGlobs: ['build/ipados/ipa/*.ipa'],
+      },
+      {
+        id: 'android-tablet-arm64-aab',
+        profile: 'tablet',
+        platform: 'android-tablet',
+        architecture: 'arm64',
+        formats: ['aab'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['build/app/outputs/bundle/tabletRelease/*.aab'],
+      },
+      {
+        id: 'windows-tablet-x64-msix',
+        profile: 'tablet',
+        platform: 'windows-tablet',
+        architecture: 'x64',
+        formats: ['msix'],
+        runner: 'windows-2022',
+        outputGlobs: ['dist/tablet/*.msix'],
+      },
+    ],
+    deployments: [
+      {
+        id: 'tablet-store',
+        environment: 'production-tablet',
+        profile: 'tablet',
+        lifecycle: 'publish',
+      },
+    ],
+  };
+
+  assert.deepEqual(validateWorkflowConfig(config), []);
+  const matrix = createPackageMatrix(config, { profile: 'tablet', platform: 'android-tablet', format: 'aab' });
+  assert.deepEqual(matrix.include.map((item) => item.packageId), ['android-tablet-arm64-tablet-aab']);
+  const deploymentMatrix = createDeploymentMatrix(config, { packageMatrix: matrix });
+  assert.equal(deploymentMatrix.include[0].environment, 'production-tablet');
+});
+
 test('loads JSON config with comments stripped and rejects invalid JSON', async () => {
   await rm(tempRoot, { recursive: true, force: true });
   await mkdir(tempRoot, { recursive: true });
@@ -387,6 +439,107 @@ test('creates normalized toolchain plan with empty defaults', () => {
   });
 });
 
+test('creates deployment matrix from declared environments and selected package targets', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'demo', repository: 'Org/demo' },
+    release: { artifactPrefix: 'demo' },
+    targets: [
+      {
+        id: 'linux-x64-server-tgz',
+        packageId: 'linux-x64-server',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+      {
+        id: 'windows-x64-desktop-msi',
+        packageId: 'windows-x64-desktop',
+        profile: 'desktop',
+        platform: 'windows',
+        architecture: 'x64',
+        formats: ['msi'],
+        runner: 'windows-2022',
+        outputGlobs: ['dist/*.msi'],
+      },
+    ],
+    deployments: [
+      {
+        id: 'prod-server',
+        environment: 'production',
+        profile: 'server',
+        platform: 'linux',
+        runner: 'ubuntu-24.04',
+        url: 'https://demo.sdkwork.com',
+        lifecycle: 'deploy',
+      },
+      {
+        id: 'prod-desktop-store',
+        environment: 'production-desktop',
+        profile: 'desktop',
+        platform: 'windows',
+        format: 'msi',
+        runner: 'windows-2022',
+        lifecycle: 'publish',
+      },
+    ],
+  };
+
+  const packageMatrix = createPackageMatrix(config, { platform: 'linux', profile: 'server', format: 'tar.gz' });
+  const deploymentMatrix = createDeploymentMatrix(config, { packageMatrix });
+
+  assert.deepEqual(deploymentMatrix, {
+    include: [
+      {
+        id: 'prod-server',
+        environment: 'production',
+        url: 'https://demo.sdkwork.com',
+        runner: 'ubuntu-24.04',
+        lifecycle: 'deploy',
+        targetId: 'linux-x64-server-tgz',
+        packageId: 'linux-x64-server',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        format: 'tar.gz',
+      },
+    ],
+  });
+});
+
+test('validates deployment environment and lifecycle values', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'bad-deploy', repository: 'Org/bad-deploy' },
+    release: { artifactPrefix: 'bad-deploy' },
+    targets: [
+      {
+        id: 'linux-x64-server-tgz',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+    ],
+    deployments: [
+      {
+        id: 'bad',
+        environment: '../prod',
+        lifecycle: 'ship',
+      },
+    ],
+  };
+
+  const issues = validateWorkflowConfig(config);
+  assert.ok(issues.some((issue) => issue.includes('deployments[0].environment')));
+  assert.ok(issues.some((issue) => issue.includes('deployments[0].lifecycle')));
+});
+
 test('creates lifecycle command plan with target environment', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
@@ -450,12 +603,57 @@ test('creates lifecycle command plan with target environment', () => {
   });
 });
 
+test('creates lifecycle command plan with deployment environment values', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'demo', repository: 'Org/demo', sourcePath: 'apps/demo' },
+    release: { artifactPrefix: 'demo', defaultVersion: '1.2.3' },
+    lifecycle: {
+      deploy: [{ run: 'echo deploy' }],
+    },
+    targets: [
+      {
+        id: 'linux-x64-server-tgz',
+        packageId: 'linux-x64-server',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+    ],
+  };
+
+  const plan = createLifecyclePlan(config, {
+    phase: 'deploy',
+    matrixItem: {
+      id: 'linux-x64-server-tgz',
+      packageId: 'linux-x64-server',
+      profile: 'server',
+      platform: 'linux',
+      architecture: 'x64',
+      format: 'tar.gz',
+      environment: 'production',
+      url: 'https://demo.sdkwork.com',
+      lifecycle: 'deploy',
+    },
+    version: '1.2.3',
+  });
+
+  assert.equal(plan.steps[0].env.SDKWORK_DEPLOY_ENVIRONMENT, 'production');
+  assert.equal(plan.steps[0].env.SDKWORK_DEPLOY_URL, 'https://demo.sdkwork.com');
+  assert.equal(plan.steps[0].env.SDKWORK_DEPLOY_LIFECYCLE, 'deploy');
+});
+
 test('validates checked-in example configurations', async () => {
   const clawRouter = await loadWorkflowConfig('examples/sdkwork-claw-router/sdkwork.workflow.json');
   const mobile = await loadWorkflowConfig('examples/mobile-flutter/sdkwork.workflow.json');
+  const tablet = await loadWorkflowConfig('examples/tablet-cross-platform/sdkwork.workflow.json');
 
   assert.deepEqual(validateWorkflowConfig(clawRouter), []);
   assert.deepEqual(validateWorkflowConfig(mobile), []);
+  assert.deepEqual(validateWorkflowConfig(tablet), []);
 });
 
 test('executes lifecycle plan steps with injected package environment', async () => {
