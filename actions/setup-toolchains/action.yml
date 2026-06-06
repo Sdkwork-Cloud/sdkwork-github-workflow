@@ -1,0 +1,67 @@
+name: Set up SDKWork toolchains
+description: Set up language and packaging toolchains declared in sdkwork.workflow.json.
+inputs:
+  config-path:
+    required: true
+    description: Path to sdkwork.workflow.json.
+runs:
+  using: composite
+  steps:
+    - id: read
+      shell: bash
+      run: |
+        set -euo pipefail
+        node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs toolchains \
+          --config "${{ inputs.config-path }}" \
+          --github-output
+
+    - name: Set up pnpm
+      if: steps.read.outputs.pnpm != ''
+      uses: pnpm/action-setup@v4
+      with:
+        version: ${{ steps.read.outputs.pnpm }}
+
+    - name: Set up Node.js
+      if: steps.read.outputs.node != ''
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ steps.read.outputs.node }}
+
+    - name: Set up Python
+      if: steps.read.outputs.python != ''
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ steps.read.outputs.python }}
+
+    - name: Set up Java
+      if: steps.read.outputs.java != ''
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: ${{ steps.read.outputs.java }}
+
+    - name: Set up Go
+      if: steps.read.outputs.go != ''
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ steps.read.outputs.go }}
+
+    - name: Set up Rust
+      if: steps.read.outputs.rust != ''
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ steps.read.outputs.rust }}
+
+    - name: Set up Flutter
+      if: steps.read.outputs.flutter != ''
+      uses: subosito/flutter-action@v2
+      with:
+        channel: ${{ steps.read.outputs.flutter }}
+
+    - name: Set up WiX
+      if: runner.os == 'Windows' && steps.read.outputs.wix != ''
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        dotnet tool install --global wix --version "${{ steps.read.outputs.wix }}"
+        "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append

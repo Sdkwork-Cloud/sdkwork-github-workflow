@@ -1,0 +1,292 @@
+name: SDKWork Package Framework
+
+on:
+  workflow_call:
+    inputs:
+      config_path:
+        description: Path to sdkwork.workflow.json in the caller repository.
+        required: false
+        type: string
+        default: sdkwork.workflow.json
+      tag:
+        description: Git tag, release tag, or source ref to package.
+        required: false
+        type: string
+        default: ''
+      package_version:
+        description: Package version used in artifact names and manifests.
+        required: false
+        type: string
+        default: ''
+      platform:
+        description: Platform filter.
+        required: false
+        type: string
+        default: all
+      architecture:
+        description: Architecture filter.
+        required: false
+        type: string
+        default: all
+      profile:
+        description: Runtime profile filter.
+        required: false
+        type: string
+        default: all
+      format:
+        description: Package format filter.
+        required: false
+        type: string
+        default: all
+      publish_release:
+        description: Upload selected artifacts to the caller repository GitHub Release.
+        required: false
+        type: boolean
+        default: true
+      upload_artifact:
+        description: Upload selected artifacts as workflow artifacts.
+        required: false
+        type: boolean
+        default: true
+      retention_days:
+        description: Workflow artifact retention days.
+        required: false
+        type: number
+        default: 30
+      framework_ref:
+        description: sdkwork-github-workflow ref used to checkout framework scripts.
+        required: false
+        type: string
+        default: main
+      dependency_refs_json:
+        description: JSON object mapping dependency ref input names to refs.
+        required: false
+        type: string
+        default: '{}'
+    secrets:
+      SDKWORK_RELEASE_TOKEN:
+        description: Token used for private dependency checkouts and optional release upload.
+        required: false
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: sdkwork-package-${{ github.repository }}-${{ inputs.tag || github.ref_name }}-${{ inputs.platform }}-${{ inputs.architecture }}-${{ inputs.profile }}-${{ inputs.format }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan package matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      target_count: ${{ steps.plan.outputs.target_count }}
+      summary_json: ${{ steps.plan.outputs.summary_json }}
+      dependencies: ${{ steps.dependencies.outputs.dependencies }}
+      dependency_count: ${{ steps.dependencies.outputs.dependency_count }}
+    steps:
+      - name: Checkout application source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+      - name: Checkout workflow framework
+        uses: actions/checkout@v4
+        with:
+          repository: Sdkwork-Cloud/sdkwork-github-workflow
+          ref: ${{ inputs.framework_ref }}
+          path: .sdkwork/github-workflow
+          fetch-depth: 1
+          token: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+      - id: validate
+        name: Validate workflow config
+        uses: ./.sdkwork/github-workflow/actions/validate-config
+        with:
+          config-path: ${{ inputs.config_path }}
+
+      - id: plan
+        name: Resolve package matrix
+        shell: bash
+        env:
+          SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
+        run: |
+          set -euo pipefail
+          node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs matrix \
+            --config "${{ inputs.config_path }}" \
+            --platform "${{ inputs.platform }}" \
+            --architecture "${{ inputs.architecture }}" \
+            --profile "${{ inputs.profile }}" \
+            --format "${{ inputs.format }}" \
+            --version "${SDKWORK_PACKAGE_VERSION}" \
+            --github-output
+
+      - id: dependencies
+        name: Resolve dependency checkout plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs dependencies \
+            --config "${{ inputs.config_path }}" \
+            --dependency-refs-json '${{ inputs.dependency_refs_json }}' \
+            --github-output
+
+  package:
+    name: Package ${{ matrix.packageId }}
+    needs: plan
+    if: needs.plan.outputs.target_count != '0'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    env:
+      SDKWORK_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
+      SDKWORK_PACKAGE_ID: ${{ matrix.packageId }}
+      SDKWORK_PACKAGE_TARGET_ID: ${{ matrix.id }}
+      SDKWORK_PACKAGE_PROFILE: ${{ matrix.profile }}
+      SDKWORK_PACKAGE_PLATFORM: ${{ matrix.platform }}
+      SDKWORK_PACKAGE_ARCHITECTURE: ${{ matrix.architecture }}
+      SDKWORK_PACKAGE_FORMAT: ${{ matrix.format }}
+      GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+    steps:
+      - name: Checkout application source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+      - name: Checkout workflow framework
+        uses: actions/checkout@v4
+        with:
+          repository: Sdkwork-Cloud/sdkwork-github-workflow
+          ref: ${{ inputs.framework_ref }}
+          path: .sdkwork/github-workflow
+          fetch-depth: 1
+          token: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+      - name: Checkout declared dependencies
+        uses: ./.sdkwork/github-workflow/actions/checkout-dependencies
+        with:
+          dependencies-json: ${{ needs.plan.outputs.dependencies }}
+          token: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+
+      - name: Set up declared toolchains
+        uses: ./.sdkwork/github-workflow/actions/setup-toolchains
+        with:
+          config-path: ${{ inputs.config_path }}
+
+      - name: Preflight
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: preflight
+          target-id: ${{ matrix.id }}
+          platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
+          profile: ${{ matrix.profile }}
+          format: ${{ matrix.format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}
+
+      - name: Install
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: install
+          target-id: ${{ matrix.id }}
+          platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
+          profile: ${{ matrix.profile }}
+          format: ${{ matrix.format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}
+
+      - name: Build
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: build
+          target-id: ${{ matrix.id }}
+          platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
+          profile: ${{ matrix.profile }}
+          format: ${{ matrix.format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}
+
+      - name: Stage
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: stage
+          target-id: ${{ matrix.id }}
+          platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
+          profile: ${{ matrix.profile }}
+          format: ${{ matrix.format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}
+
+      - name: Package
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: package
+          target-id: ${{ matrix.id }}
+          platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
+          profile: ${{ matrix.profile }}
+          format: ${{ matrix.format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}
+
+      - name: Validate artifacts
+        uses: ./.sdkwork/github-workflow/actions/run-lifecycle
+        with:
+          config-path: ${{ inputs.config_path }}
+          phase: validate
+          target-id: ${{ matrix.id }}
+          platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
+          profile: ${{ matrix.profile }}
+          format: ${{ matrix.format }}
+          version: ${{ inputs.package_version }}
+          release-tag: ${{ inputs.tag || github.ref_name }}
+
+      - name: Upload workflow artifact
+        if: inputs.upload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifactName }}-${{ inputs.tag || github.run_number }}
+          path: ${{ matrix.outputGlobsText }}
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
+      - name: Attest build provenance
+        if: ${{ fromJson(needs.plan.outputs.summary_json).targets > 0 }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ matrix.outputGlobsText }}
+
+      - name: Upload assets to GitHub Release
+        if: inputs.publish_release
+        uses: ./.sdkwork/github-workflow/actions/publish-release
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
+          repository: ${{ github.repository }}
+          files: ${{ matrix.outputGlobsText }}
+          clobber: 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}

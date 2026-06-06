@@ -1,0 +1,76 @@
+{
+  "$schema": "../../schemas/sdkwork-workflow.schema.json",
+  "schemaVersion": "2026-06-06.sdkwork.workflow.v1",
+  "app": {
+    "id": "sdkwork-mobile-example",
+    "name": "SDKWork Mobile Example",
+    "repository": "Sdkwork-Cloud/sdkwork-mobile-example",
+    "sourcePath": "."
+  },
+  "release": {
+    "artifactPrefix": "sdkwork-mobile-example",
+    "defaultVersion": "0.1.0"
+  },
+  "toolchains": {
+    "java": "21",
+    "flutter": "stable",
+    "android": true,
+    "xcode": true
+  },
+  "lifecycle": {
+    "install": [
+      {
+        "run": "flutter pub get"
+      }
+    ],
+    "build": [
+      {
+        "run": "flutter build $SDKWORK_PACKAGE_FORMAT --release"
+      }
+    ],
+    "validate": [
+      {
+        "run": "test -n \"$SDKWORK_PACKAGE_ID\""
+      }
+    ]
+  },
+  "targets": [
+    {
+      "id": "android-arm64-apk",
+      "profile": "mobile",
+      "platform": "android",
+      "architecture": "arm64",
+      "formats": ["apk"],
+      "runner": "ubuntu-24.04",
+      "outputGlobs": ["build/app/outputs/flutter-apk/*.apk"]
+    },
+    {
+      "id": "android-arm64-aab",
+      "profile": "mobile",
+      "platform": "android",
+      "architecture": "arm64",
+      "formats": ["aab"],
+      "runner": "ubuntu-24.04",
+      "outputGlobs": ["build/app/outputs/bundle/release/*.aab"]
+    },
+    {
+      "id": "ios-universal-ipa",
+      "profile": "mobile",
+      "platform": "ios",
+      "architecture": "universal",
+      "formats": ["ipa"],
+      "runner": "macos-14",
+      "outputGlobs": ["build/ios/ipa/*.ipa"]
+    }
+  ],
+  "security": {
+    "oidcRequired": true,
+    "artifactAttestations": true,
+    "signingRequired": true
+  },
+  "publish": {
+    "workflowArtifact": true,
+    "githubRelease": true,
+    "retentionDays": 30
+  }
+}

@@ -1,0 +1,49 @@
+name: Run SDKWork lifecycle phase
+description: Run a configured SDKWork application lifecycle phase for one package target.
+inputs:
+  config-path:
+    required: true
+    description: Path to sdkwork.workflow.json.
+  phase:
+    required: true
+    description: Lifecycle phase.
+  target-id:
+    required: true
+    description: Matrix target id.
+  platform:
+    required: true
+    description: Platform filter.
+  architecture:
+    required: true
+    description: Architecture filter.
+  profile:
+    required: true
+    description: Profile filter.
+  format:
+    required: true
+    description: Format filter.
+  version:
+    required: false
+    description: Package version.
+    default: ''
+  release-tag:
+    required: false
+    description: Release tag.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs lifecycle \
+          --config "${{ inputs.config-path }}" \
+          --phase "${{ inputs.phase }}" \
+          --target-id "${{ inputs.target-id }}" \
+          --platform "${{ inputs.platform }}" \
+          --architecture "${{ inputs.architecture }}" \
+          --profile "${{ inputs.profile }}" \
+          --format "${{ inputs.format }}" \
+          --version "${{ inputs.version }}" \
+          --release-tag "${{ inputs.release-tag }}" \
+          --run

@@ -1,0 +1,49 @@
+name: Publish SDKWork release assets
+description: Upload selected package artifacts to a GitHub Release.
+inputs:
+  tag:
+    required: true
+    description: GitHub Release tag.
+  repository:
+    required: true
+    description: owner/repo target.
+  files:
+    required: true
+    description: Newline-separated file globs.
+  clobber:
+    required: false
+    default: 'true'
+    description: Whether to overwrite existing release assets.
+runs:
+  using: composite
+  steps:
+    - shell: pwsh
+      env:
+        SDKWORK_RELEASE_FILES: ${{ inputs.files }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $tag = "${{ inputs.tag }}"
+        if (-not $tag) {
+          throw "Release tag is required"
+        }
+        $files = @()
+        $env:SDKWORK_RELEASE_FILES -split "`n" | ForEach-Object {
+          $glob = $_.Trim()
+          if ($glob) {
+            $files += Get-ChildItem -Path $glob -File -ErrorAction SilentlyContinue
+          }
+        }
+        if ($files.Count -eq 0) {
+          throw "No files matched release upload inputs"
+        }
+        gh release view $tag --repo "${{ inputs.repository }}" *> $null
+        if ($LASTEXITCODE -ne 0) {
+          gh release create $tag --repo "${{ inputs.repository }}" --title $tag --notes "Automated SDKWork package release."
+        }
+        foreach ($file in $files) {
+          $ghArgs = @("release", "upload", $tag, $file.FullName, "--repo", "${{ inputs.repository }}")
+          if ("${{ inputs.clobber }}" -eq "true") {
+            $ghArgs += "--clobber"
+          }
+          gh @ghArgs
+        }

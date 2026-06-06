@@ -1,0 +1,16 @@
+{
+  "name": "@sdkwork/github-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reusable GitHub Actions workflow framework for SDKWork application packaging and deployment.",
+  "scripts": {
+    "test": "node --test",
+    "validate": "npm test && node scripts/validate-repository.mjs",
+    "validate:example": "node scripts/sdkwork-workflow.mjs validate --config examples/sdkwork-claw-router/sdkwork.workflow.json",
+    "matrix:example": "node scripts/sdkwork-workflow.mjs matrix --config examples/sdkwork-claw-router/sdkwork.workflow.json --platform all --architecture all --profile all --format all --json"
+  },
+  "engines": {
+    "node": ">=20.11.0"
+  }
+}

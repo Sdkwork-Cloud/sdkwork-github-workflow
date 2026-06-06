@@ -1,0 +1,47 @@
+name: Checkout SDKWork dependencies
+description: Checkout repositories declared by sdkwork.workflow.json dependency plan.
+inputs:
+  dependencies-json:
+    required: true
+    description: Dependency plan JSON from scripts/sdkwork-workflow.mjs dependencies.
+  token:
+    required: false
+    description: GitHub token for private dependency repositories.
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - shell: pwsh
+      env:
+        SDKWORK_DEPENDENCIES_JSON: ${{ inputs.dependencies-json }}
+        SDKWORK_DEPENDENCIES_TOKEN: ${{ inputs.token }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $plan = $env:SDKWORK_DEPENDENCIES_JSON | ConvertFrom-Json
+        if (-not $plan.include) {
+          Write-Host "[sdkwork-dependencies] no dependencies"
+          exit 0
+        }
+        $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:SDKWORK_DEPENDENCIES_TOKEN"))
+        $authHeader = "AUTHORIZATION: basic $basic"
+        foreach ($dependency in $plan.include) {
+          $path = [string]$dependency.path
+          $repo = [string]$dependency.repository
+          $ref = [string]$dependency.ref
+          if (-not $path -or -not $repo) {
+            throw "Dependency plan item is missing repository or path"
+          }
+          if (Test-Path -LiteralPath $path) {
+            Write-Host "[sdkwork-dependencies] skip existing $path"
+            continue
+          }
+          Write-Host "[sdkwork-dependencies] checkout $repo -> $path"
+          git -c "http.https://github.com/.extraheader=$authHeader" clone --no-tags --depth 1 "https://github.com/$repo.git" $path
+          git -c "http.https://github.com/.extraheader=$authHeader" -C $path fetch --depth 1 origin $ref
+          git -C $path checkout FETCH_HEAD
+          if ([string]$dependency.submodules -eq "recursive") {
+            git -C $path submodule update --init --recursive
+          } elseif ([string]$dependency.submodules -eq "true") {
+            git -C $path submodule update --init
+          }
+        }

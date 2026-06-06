@@ -1,0 +1,23 @@
+name: Validate SDKWork workflow config
+description: Validate sdkwork.workflow.json with the SDKWork workflow planner.
+inputs:
+  config-path:
+    description: Path to sdkwork.workflow.json.
+    required: true
+outputs:
+  ok:
+    description: true when the config is valid.
+    value: ${{ steps.validate.outputs.ok }}
+  issues-json:
+    description: JSON array of validation issues.
+    value: ${{ steps.validate.outputs.issues_json }}
+runs:
+  using: composite
+  steps:
+    - id: validate
+      shell: bash
+      run: |
+        set -euo pipefail
+        node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs validate \
+          --config "${{ inputs.config-path }}" \
+          --github-output
