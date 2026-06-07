@@ -526,7 +526,7 @@ function resolvedDependencyPath(dependency) {
     return dependency.path;
   }
   if (typeof dependency?.id === 'string' && dependency.id.trim() !== '') {
-    return `.sdkwork/dependencies/${dependency.id}`;
+    return `../${dependency.id}`;
   }
   return null;
 }

@@ -20,6 +20,10 @@ import {
 
 const tempRoot = path.resolve('tmp/tests/sdkwork-workflow');
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
 test.after(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
@@ -1086,7 +1090,7 @@ test('rejects explicit dependency checkout path when it overlaps application sou
   assert.ok(issues.some((issue) => issue.includes('dependencies[0].path must not overlap app.sourcePath')));
 });
 
-test('plans default dependency checkout under sdkwork dependencies for repository-root applications', () => {
+test('plans default dependency checkout as a runner-local sibling repository', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
     app: { id: 'repo-root-app', repository: 'Org/repo-root-app', sourcePath: '.' },
@@ -1114,7 +1118,7 @@ test('plans default dependency checkout under sdkwork dependencies for repositor
   assert.deepEqual(validateWorkflowConfig(config), []);
 
   const plan = createDependencyPlan(config);
-  assert.equal(plan.include[0].path, '.sdkwork/dependencies/sdkwork-core');
+  assert.equal(plan.include[0].path, '../sdkwork-core');
 });
 
 test('rejects unsafe lifecycle working directories and non-string step environment values', () => {
@@ -1709,6 +1713,22 @@ test('shell-based composite actions do not embed action input expressions in scr
   }
 });
 
+test('dependency checkout action does not expose legacy SDKWork dependency directory terminology', async () => {
+  const action = await readFile('actions/checkout-dependencies/action.yml', 'utf8');
+  const legacyDirectoryPath = ['.sdkwork', 'dependencies'].join('/');
+  const legacyWindowsDirectoryPath = ['.sdkwork', 'dependencies'].join('\\');
+  const legacyEnvPrefixPattern = new RegExp(['SDKWORK', 'DEPENDENCIES_'].join('_'), 'u');
+  const legacyLogPrefixPattern = new RegExp(escapeRegExp(`[${['sdkwork', 'dependencies'].join('-')}]`), 'u');
+
+  assert.doesNotMatch(action, new RegExp(escapeRegExp(legacyDirectoryPath), 'u'));
+  assert.doesNotMatch(action, new RegExp(escapeRegExp(legacyWindowsDirectoryPath), 'u'));
+  assert.doesNotMatch(action, legacyEnvPrefixPattern);
+  assert.doesNotMatch(action, legacyLogPrefixPattern);
+  assert.match(action, /SDKWORK_RELEASE_CHECKOUT_PLAN_JSON/u);
+  assert.match(action, /SDKWORK_RELEASE_CHECKOUT_TOKEN/u);
+  assert.match(action, /\[sdkwork-release-checkout\]/u);
+});
+
 test('creates deployment matrix from declared environments and selected package targets', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
@@ -2212,6 +2232,34 @@ runs:
   validateYamlText(workflowPath, issues);
 
   assert.ok(issues.some((issue) => issue.includes('must not embed action input expressions in shell scripts')));
+});
+
+test('repository validation rejects legacy SDKWork dependency materialization terminology', async () => {
+  const root = path.join(tempRoot, 'repository-validation-legacy-dependency-path');
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+  const workflowPath = path.join(root, 'workflow.yml');
+  const legacyPath = ['.sdkwork', 'dependencies', 'sdkwork-core'].join('/');
+  const legacyScript = `${['prepare-local', 'dependencies'].join('-')}.mjs`;
+  const legacyScriptCommand = ['deps', 'local', 'link'].join(':');
+
+  await writeFile(workflowPath, `
+name: Bad Workflow
+jobs:
+  package:
+    steps:
+      - shell: bash
+        run: |
+          node scripts/${legacyScript}
+          pnpm ${legacyScriptCommand}
+          ls ${legacyPath}
+`);
+
+  const { validateYamlText } = await import('../scripts/validate-repository.mjs');
+  const issues = [];
+  validateYamlText(workflowPath, issues);
+
+  assert.ok(issues.some((issue) => issue.includes('must not reference legacy SDKWork dependency materialization')));
 });
 
 test('repository validation only scans literal run blocks for action input expressions', async () => {

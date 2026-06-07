@@ -13,16 +13,16 @@ runs:
   steps:
     - shell: pwsh
       env:
-        SDKWORK_DEPENDENCIES_JSON: ${{ inputs.dependencies-json }}
-        SDKWORK_DEPENDENCIES_TOKEN: ${{ inputs.token }}
+        SDKWORK_RELEASE_CHECKOUT_PLAN_JSON: ${{ inputs.dependencies-json }}
+        SDKWORK_RELEASE_CHECKOUT_TOKEN: ${{ inputs.token }}
       run: |
         $ErrorActionPreference = "Stop"
-        $plan = $env:SDKWORK_DEPENDENCIES_JSON | ConvertFrom-Json
+        $plan = $env:SDKWORK_RELEASE_CHECKOUT_PLAN_JSON | ConvertFrom-Json
         if (-not $plan.include) {
-          Write-Host "[sdkwork-dependencies] no dependencies"
+          Write-Host "[sdkwork-release-checkout] no dependencies"
           exit 0
         }
-        $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:SDKWORK_DEPENDENCIES_TOKEN"))
+        $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:SDKWORK_RELEASE_CHECKOUT_TOKEN"))
         $authHeader = "AUTHORIZATION: basic $basic"
         foreach ($dependency in $plan.include) {
           $path = [string]$dependency.path
@@ -32,10 +32,10 @@ runs:
             throw "Dependency plan item is missing repository or path"
           }
           if (Test-Path -LiteralPath $path) {
-            Write-Host "[sdkwork-dependencies] skip existing $path"
+            Write-Host "[sdkwork-release-checkout] skip existing $path"
             continue
           }
-          Write-Host "[sdkwork-dependencies] checkout $repo -> $path"
+          Write-Host "[sdkwork-release-checkout] checkout $repo -> $path"
           git -c "http.https://github.com/.extraheader=$authHeader" clone --no-tags --depth 1 "https://github.com/$repo.git" $path
           git -c "http.https://github.com/.extraheader=$authHeader" -C $path fetch --depth 1 origin $ref
           git -C $path checkout FETCH_HEAD

@@ -34,6 +34,19 @@ const REQUIRED_FILES = Object.freeze([
   'README.md',
 ]);
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+const LEGACY_DEPENDENCY_MATERIALIZATION_PATTERNS = Object.freeze([
+  new RegExp(escapeRegExp(['.sdkwork', 'dependencies'].join('/')), 'u'),
+  new RegExp(escapeRegExp(['.sdkwork', 'dependencies'].join('\\')), 'u'),
+  new RegExp(escapeRegExp(['deps', 'local'].join(':')), 'u'),
+  new RegExp(escapeRegExp(`${['prepare-local', 'dependencies'].join('-')}.mjs`), 'u'),
+  new RegExp(escapeRegExp(['SDKWORK', 'DEPENDENCIES_'].join('_')), 'u'),
+  new RegExp(escapeRegExp(`[${['sdkwork', 'dependencies'].join('-')}]`), 'u'),
+]);
+
 function requireFile(filePath, issues) {
   if (!existsSync(path.resolve(filePath))) {
     issues.push(`missing required file: ${filePath}`);
@@ -83,6 +96,9 @@ function validateYamlText(filePath, issues) {
   }
   if (text.includes('join(matrix.outputGlobs')) {
     issues.push(`${filePath} must use matrix.outputGlobsText instead of expression-time join`);
+  }
+  if (LEGACY_DEPENDENCY_MATERIALIZATION_PATTERNS.some((pattern) => pattern.test(text))) {
+    issues.push(`${filePath} must not reference legacy SDKWork dependency materialization`);
   }
   if (filePath.endsWith('checkout-dependencies/action.yml') && text.includes('x-access-token:${{ inputs.token }}')) {
     issues.push(`${filePath} must not put tokens into clone URLs`);

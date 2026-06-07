@@ -364,7 +364,7 @@ dependency_refs_json: >-
   }
 ```
 
-Dependency refs are validated as safe Git refs before checkout. Dependency ref JSON is passed to the planner through an environment variable before shell execution instead of direct expression interpolation. When `dependencies[].path` is omitted, the dependency is checked out under `.sdkwork/dependencies/<id>` so repository-root applications can keep lifecycle working directories at `.` without reusing source-owned paths. Explicit dependency checkout paths must not overlap the application source path or `.sdkwork/github-workflow`. The v1 framework supports `SDKWORK_RELEASE_TOKEN` as the dependency checkout token; other per-dependency `tokenSecret` names are rejected until a future token-map contract is added. Checkout logic passes tokens through Git credential headers instead of clone URLs.
+Dependency refs are validated as safe Git refs before checkout. Dependency ref JSON is passed to the planner through an environment variable before shell execution instead of direct expression interpolation. When `dependencies[].path` is omitted, the dependency is checked out as a runner-local sibling of the application repository, for example `../<id>`, so native build-tool workspace paths keep the same shape in local development and CI. Explicit dependency checkout paths must not overlap the application source path or `.sdkwork/github-workflow`. The v1 framework supports `SDKWORK_RELEASE_TOKEN` as the dependency checkout token; other per-dependency `tokenSecret` names are rejected until a future token-map contract is added. Checkout logic passes tokens through Git credential headers instead of clone URLs.
 
 ## Local Validation
 
