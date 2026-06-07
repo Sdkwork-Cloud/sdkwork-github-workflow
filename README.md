@@ -41,7 +41,7 @@ Use the generator for a new application repository:
 
 ```bash
 node scripts/sdkwork-workflow.mjs init-app \
-  --root D:/sdkwork-opensource/my-app \
+  --root ../my-app \
   --app-id my-app \
   --app-name "My App" \
   --repository Sdkwork-Cloud/my-app \

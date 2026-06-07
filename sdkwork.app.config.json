@@ -1,0 +1,278 @@
+{
+  "schemaVersion": 3,
+  "kind": "sdkwork.app",
+  "app": {
+    "key": "sdkwork-github-workflow",
+    "name": "SDKWork Github Workflow",
+    "displayName": "SDKWork Github Workflow",
+    "description": "Reusable GitHub Actions workflow framework for SDKWork application packaging and deployment.",
+    "vendor": "SDKWork",
+    "officialWebsiteUrl": "https://sdkwork.com/apps/sdkwork-github-workflow",
+    "supportUrl": "https://sdkwork.com/support",
+    "privacyPolicyUrl": "https://sdkwork.com/privacy",
+    "termsOfServiceUrl": "https://sdkwork.com/terms",
+    "iconUrl": "https://cdn.sdkwork.com/apps/sdkwork-github-workflow/assets/icon-1024.png",
+    "appType": "APP_HTML",
+    "versionSource": "package.json",
+    "identifiers": {
+      "packageName": null,
+      "bundleId": null,
+      "desktopAppId": "com.sdkwork.sdkwork.github.workflow.desktop",
+      "containerImage": "registry.sdkwork.com/apps/sdkwork-github-workflow"
+    }
+  },
+  "backend": {
+    "profileKey": "backend-root-admin",
+    "ownerMode": "tenant",
+    "grantMode": "current",
+    "platform": "WEB",
+    "appId": null,
+    "tenantId": "20001",
+    "organizationId": null
+  },
+  "runtime": {
+    "family": "web",
+    "framework": "node-service",
+    "runtimes": [
+      "WEB",
+      "BROWSER"
+    ],
+    "deliveryModes": [
+      "WEB_URL",
+      "DIRECT_DOWNLOAD"
+    ],
+    "defaultPlatform": "WEB",
+    "defaultArchitecture": "x64"
+  },
+  "media": {
+    "icons": {
+      "primary": {
+        "id": "sdkwork-github-workflow-primary-icon",
+        "type": "ICON",
+        "purpose": "PRIMARY",
+        "url": "https://cdn.sdkwork.com/apps/sdkwork-github-workflow/assets/icon-1024.png",
+        "platform": "APP",
+        "locale": "en-US",
+        "width": 1024,
+        "height": 1024,
+        "format": "PNG",
+        "fileSizeBytes": 524288,
+        "alphaChannel": false,
+        "sortOrder": 0,
+        "enabled": true,
+        "metadata": {
+          "generatedPlaceholder": true
+        }
+      },
+      "platform": [],
+      "metadata": {
+        "generatedBy": "apps/scripts/initialize-sdkwork-app-standard-v3.mjs"
+      }
+    },
+    "screenshots": [
+      {
+        "id": "sdkwork-github-workflow-web-screenshot",
+        "type": "SCREENSHOT",
+        "purpose": "CATALOG_SCREENSHOT",
+        "url": "https://cdn.sdkwork.com/apps/sdkwork-github-workflow/media/web-screenshot.png",
+        "platform": "WEB",
+        "locale": "en-US",
+        "deviceClass": "BROWSER",
+        "displayType": "WEB_DESKTOP",
+        "width": 1920,
+        "height": 1080,
+        "format": "PNG",
+        "fileSizeBytes": 1048576,
+        "alphaChannel": false,
+        "caption": "SDKWork Github Workflow product screenshot.",
+        "sortOrder": 0,
+        "enabled": true,
+        "metadata": {
+          "generatedPlaceholder": true,
+          "altText": "SDKWork Github Workflow app screenshot."
+        }
+      }
+    ],
+    "previews": [
+      {
+        "id": "sdkwork-github-workflow-catalog-preview",
+        "type": "PREVIEW_IMAGE",
+        "purpose": "CATALOG_PREVIEW",
+        "url": "https://cdn.sdkwork.com/apps/sdkwork-github-workflow/media/preview-cover.png",
+        "platform": "WEB",
+        "locale": "en-US",
+        "width": 1600,
+        "height": 900,
+        "format": "PNG",
+        "fileSizeBytes": 786432,
+        "alphaChannel": false,
+        "caption": "SDKWork Github Workflow preview.",
+        "sortOrder": 0,
+        "enabled": true,
+        "metadata": {
+          "generatedPlaceholder": true,
+          "altText": "SDKWork Github Workflow preview cover."
+        }
+      }
+    ],
+    "metadata": {
+      "assetVersion": "0.1.0",
+      "defaultLocale": "en-US"
+    }
+  },
+  "publish": {
+    "status": "ACTIVE",
+    "installSkill": {
+      "name": "sdkwork-skills-app"
+    },
+    "platforms": [
+      "WEB"
+    ],
+    "installPlatforms": [
+      "WEB"
+    ],
+    "defaultPackageId": "web-production",
+    "storeUrl": "https://sdkwork.com/apps/sdkwork-github-workflow",
+    "stores": [],
+    "config": {
+      "workspaceRoot": "apps/sdkwork-github-workflow",
+      "framework": "node-service",
+      "managedBy": "apps/scripts/initialize-sdkwork-app-standard-v3.mjs"
+    }
+  },
+  "environments": {
+    "development": {
+      "accessUrl": "https://api-dev.sdkwork.com/apps/sdkwork-github-workflow",
+      "deployUrl": "https://api-dev.sdkwork.com/apps/sdkwork-github-workflow",
+      "deployEnv": "dev"
+    },
+    "test": {
+      "accessUrl": "https://api-test.sdkwork.com/apps/sdkwork-github-workflow",
+      "deployUrl": "https://api-test.sdkwork.com/apps/sdkwork-github-workflow",
+      "deployEnv": "test"
+    },
+    "production": {
+      "accessUrl": "https://api.sdkwork.com/apps/sdkwork-github-workflow",
+      "deployUrl": "https://api.sdkwork.com/apps/sdkwork-github-workflow",
+      "deployEnv": "production"
+    }
+  },
+  "artifacts": {
+    "installConfig": {
+      "defaultPackageId": "web-production",
+      "installCommand": "sdkwork install sdkwork-github-workflow",
+      "launchCommand": "sdkwork open sdkwork-github-workflow",
+      "uninstallCommand": "sdkwork uninstall sdkwork-github-workflow",
+      "packages": [
+        {
+          "id": "web-production",
+          "name": "SDKWork Github Workflow Web Bundle",
+          "sourceType": "WEB_URL",
+          "packageFormat": "ZIP",
+          "platform": "WEB",
+          "url": "https://cdn.sdkwork.com/apps/sdkwork-github-workflow/STABLE/0.1.0/web.zip",
+          "enabled": true,
+          "metadata": {},
+          "checksumAlgorithm": "SHA-256",
+          "checksum": "38a2adc538a2adc538a2adc538a2adc538a2adc538a2adc538a2adc538a2adc5"
+        },
+        {
+          "id": "desktop-windows",
+          "name": "SDKWork Github Workflow Windows Bundle",
+          "sourceType": "BINARY_URL",
+          "packageFormat": "ZIP",
+          "platform": "DESKTOP_WINDOWS",
+          "url": "https://cdn.sdkwork.com/apps/sdkwork-github-workflow/STABLE/0.1.0/windows/x64/app.zip",
+          "enabled": true,
+          "metadata": {},
+          "architecture": "x64",
+          "checksumAlgorithm": "SHA-256",
+          "checksum": "11709f3f11709f3f11709f3f11709f3f11709f3f11709f3f11709f3f11709f3f"
+        },
+        {
+          "id": "desktop-macos",
+          "name": "SDKWork Github Workflow macOS Bundle",
+          "sourceType": "BINARY_URL",
+          "packageFormat": "DMG",
+          "platform": "DESKTOP_MACOS",
+          "url": "https://cdn.sdkwork.com/apps/sdkwork-github-workflow/STABLE/0.1.0/macos/universal/app.dmg",
+          "enabled": true,
+          "metadata": {},
+          "architecture": "universal",
+          "checksumAlgorithm": "SHA-256",
+          "checksum": "d77e972fd77e972fd77e972fd77e972fd77e972fd77e972fd77e972fd77e972f"
+        },
+        {
+          "id": "desktop-linux",
+          "name": "SDKWork Github Workflow Linux Bundle",
+          "sourceType": "BINARY_URL",
+          "packageFormat": "APPIMAGE",
+          "platform": "DESKTOP_LINUX",
+          "url": "https://cdn.sdkwork.com/apps/sdkwork-github-workflow/STABLE/0.1.0/linux/generic/x64/app.AppImage",
+          "enabled": true,
+          "metadata": {
+            "linux": {
+              "distro": "generic"
+            }
+          },
+          "architecture": "x64",
+          "checksumAlgorithm": "SHA-256",
+          "checksum": "d7744cb0d7744cb0d7744cb0d7744cb0d7744cb0d7744cb0d7744cb0d7744cb0"
+        }
+      ],
+      "metadata": {
+        "workspaceRoot": "apps/sdkwork-github-workflow",
+        "framework": "node-service",
+        "packageManager": "pnpm",
+        "migratedFromLegacyConfig": false
+      }
+    }
+  },
+  "release": {
+    "currentVersion": "0.1.0",
+    "defaultChannel": "STABLE",
+    "latest": {
+      "STABLE": "0.1.0"
+    },
+    "notes": [
+      {
+        "version": "0.1.0",
+        "releaseChannel": "STABLE",
+        "title": "SDKWork Github Workflow 0.1.0",
+        "summary": "SDKWork Github Workflow initialized standard release.",
+        "content": "Initial SDKWork App Standard v3 manifest for SDKWork Github Workflow.",
+        "highlights": [
+          "SDKWork App Standard v3 configuration initialized",
+          "PlusApp projection metadata standardized",
+          "Download package matrix normalized"
+        ],
+        "packageIds": [
+          "web-production",
+          "desktop-windows",
+          "desktop-macos",
+          "desktop-linux"
+        ],
+        "publishedAt": "2026-05-07T00:00:00Z",
+        "current": true,
+        "forceUpdate": false,
+        "minSupportedVersion": "0.1.0",
+        "metadata": {}
+      }
+    ]
+  },
+  "security": {
+    "checksumRequired": false,
+    "signatureRequired": false,
+    "sbomRequired": false
+  },
+  "devApp": {
+    "build": {
+      "targets": []
+    },
+    "sourceRoot": "apps/sdkwork-github-workflow"
+  },
+  "metadata": {
+    "standardOwner": "sdkwork-platform",
+    "initializedAt": "2026-05-07T00:00:00Z"
+  }
+}
