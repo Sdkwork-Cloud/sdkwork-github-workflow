@@ -42,7 +42,7 @@
       "id": "sdkwork-im-sdk",
       "repository": "Sdkwork-Cloud/sdkwork-im-sdk",
       "refInput": "SDKWORK_IM_SDK_REF",
-      "path": "apps/craw-chat/sdks/sdkwork-im-sdk",
+      "path": "apps/sdkwork-im/sdks/sdkwork-im-sdk",
       "tokenSecret": "SDKWORK_RELEASE_TOKEN"
     },
     {
