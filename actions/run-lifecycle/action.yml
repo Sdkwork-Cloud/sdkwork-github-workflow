@@ -10,6 +10,14 @@ inputs:
   target-id:
     required: true
     description: Matrix target id.
+  deployment-profile:
+    required: false
+    description: Deployment profile filter.
+    default: all
+  runtime-target:
+    required: false
+    description: Runtime target filter.
+    default: all
   platform:
     required: true
     description: Platform filter.
@@ -54,6 +62,8 @@ runs:
         SDKWORK_CONFIG_PATH: ${{ inputs.config-path }}
         SDKWORK_LIFECYCLE_PHASE: ${{ inputs.phase }}
         SDKWORK_TARGET_ID: ${{ inputs.target-id }}
+        SDKWORK_TARGET_DEPLOYMENT_PROFILE: ${{ inputs.deployment-profile }}
+        SDKWORK_TARGET_RUNTIME_TARGET: ${{ inputs.runtime-target }}
         SDKWORK_TARGET_PLATFORM: ${{ inputs.platform }}
         SDKWORK_TARGET_ARCHITECTURE: ${{ inputs.architecture }}
         SDKWORK_TARGET_PROFILE: ${{ inputs.profile }}
@@ -70,6 +80,8 @@ runs:
           --config "${SDKWORK_CONFIG_PATH}" \
           --phase "${SDKWORK_LIFECYCLE_PHASE}" \
           --target-id "${SDKWORK_TARGET_ID}" \
+          --deployment-profile "${SDKWORK_TARGET_DEPLOYMENT_PROFILE}" \
+          --runtime-target "${SDKWORK_TARGET_RUNTIME_TARGET}" \
           --platform "${SDKWORK_TARGET_PLATFORM}" \
           --architecture "${SDKWORK_TARGET_ARCHITECTURE}" \
           --profile "${SDKWORK_TARGET_PROFILE}" \

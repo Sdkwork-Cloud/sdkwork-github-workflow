@@ -56,31 +56,49 @@
   },
   "targets": [
     {
-      "id": "ipados-universal-tablet-ipa",
+      "id": "ipados-universal-standalone-tablet-ipa",
       "profile": "tablet",
       "platform": "ipados",
       "architecture": "universal",
-      "formats": ["ipa"],
+      "formats": [
+        "ipa"
+      ],
       "runner": "macos-14",
-      "outputGlobs": ["build/ipados/ipa/*.ipa"]
+      "outputGlobs": [
+        "build/ipados/ipa/*.ipa"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "tablet-ipados"
     },
     {
-      "id": "android-tablet-arm64-tablet-aab",
+      "id": "android-tablet-arm64-standalone-tablet-aab",
       "profile": "tablet",
       "platform": "android-tablet",
       "architecture": "arm64",
-      "formats": ["aab"],
+      "formats": [
+        "aab"
+      ],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["build/app/outputs/bundle/tabletRelease/*.aab"]
+      "outputGlobs": [
+        "build/app/outputs/bundle/tabletRelease/*.aab"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "tablet-android"
     },
     {
-      "id": "windows-tablet-x64-tablet-msix",
+      "id": "windows-tablet-x64-standalone-tablet-msix",
       "profile": "tablet",
       "platform": "windows-tablet",
       "architecture": "x64",
-      "formats": ["msix"],
+      "formats": [
+        "msix"
+      ],
       "runner": "windows-2022",
-      "outputGlobs": ["dist/tablet/*.msix"]
+      "outputGlobs": [
+        "dist/tablet/*.msix"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "desktop"
     }
   ],
   "security": {
@@ -98,7 +116,8 @@
       "id": "tablet-production-store",
       "environment": "production-tablet",
       "profile": "tablet",
-      "lifecycle": "publish"
+      "lifecycle": "publish",
+      "deploymentProfile": "standalone"
     }
   ]
 }

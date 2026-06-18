@@ -8,11 +8,44 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const SCHEMA_VERSION = '2026-06-06.sdkwork.workflow.v1';
-const SUPPORTED_PROFILES = Object.freeze(['server', 'desktop', 'mobile', 'tablet', 'web', 'worker', 'library']);
+const SUPPORTED_DEPLOYMENT_PROFILES = Object.freeze(['standalone', 'cloud']);
+const SUPPORTED_RUNTIME_TARGETS = Object.freeze([
+  'browser',
+  'desktop',
+  'tablet-ipados',
+  'tablet-android',
+  'capacitor-ios',
+  'capacitor-android',
+  'flutter-ios',
+  'flutter-android',
+  'android-native',
+  'ios-native',
+  'harmony-native',
+  'mini-program',
+  'server',
+  'container',
+  'test-runner',
+]);
+const SUPPORTED_PROFILES = Object.freeze([
+  'browser',
+  'desktop',
+  'mobile',
+  'tablet',
+  'mini-program',
+  'server',
+  'container',
+  'worker',
+  'library',
+  'test',
+]);
 const ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
 const PACKAGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
+const LOWER_KEBAB_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const SUPPORTED_PLATFORMS = Object.freeze([
+  'web',
+  'h5',
+  'h5-weixin',
   'linux',
   'windows',
   'macos',
@@ -21,8 +54,20 @@ const SUPPORTED_PLATFORMS = Object.freeze([
   'android',
   'android-tablet',
   'windows-tablet',
-  'web',
+  'harmony',
   'container',
+  'mp-weixin',
+  'mp-alipay',
+  'mp-baidu',
+  'mp-toutiao',
+  'mp-lark',
+  'mp-qq',
+  'mp-kuaishou',
+  'mp-jd',
+  'mp-360',
+  'mp-dingtalk',
+  'mp-ali',
+  'test',
 ]);
 const SUPPORTED_ARCHITECTURES = Object.freeze(['x64', 'arm64', 'armv7', 'universal', 'wasm32', 'noarch']);
 const SUPPORTED_DEB_DISTRIBUTIONS = Object.freeze(['debian', 'ubuntu']);
@@ -52,10 +97,34 @@ const SUPPORTED_FORMATS = Object.freeze([
   'aab',
   'ipa',
   'web',
+  'web-url',
   'static',
+  'mini-program-package',
   'jar',
   'war',
+  'other',
 ]);
+const PROFILE_RUNTIME_TARGETS = Object.freeze({
+  browser: ['browser'],
+  desktop: ['desktop'],
+  mobile: [
+    'browser',
+    'capacitor-ios',
+    'capacitor-android',
+    'flutter-ios',
+    'flutter-android',
+    'android-native',
+    'ios-native',
+    'harmony-native',
+  ],
+  tablet: ['tablet-ipados', 'tablet-android', 'desktop'],
+  'mini-program': ['mini-program'],
+  server: ['server'],
+  container: ['container'],
+  worker: ['server', 'container'],
+  library: ['browser', 'server', 'container', 'test-runner'],
+  test: ['test-runner'],
+});
 const SECRET_VALUE_PATTERNS = Object.freeze([
   /^gh[pousr]_[0-9A-Za-z_]{8,}$/u,
   /^github_pat_[0-9A-Za-z_]+$/u,
@@ -95,7 +164,22 @@ const TOOLCHAIN_CONFIG_KEYS = Object.freeze(['node', 'pnpm', 'python', 'java', '
 const TOOLCHAIN_STRING_KEYS = Object.freeze(['node', 'pnpm', 'python', 'java', 'go', 'rust', 'flutter', 'dotnet', 'wix']);
 const TOOLCHAIN_BOOLEAN_KEYS = Object.freeze(['android', 'xcode']);
 const LIFECYCLE_STEP_KEYS = Object.freeze(['name', 'run', 'shell', 'workingDirectory', 'env']);
-const TARGET_CONFIG_KEYS = Object.freeze(['id', 'packageId', 'profile', 'platform', 'distribution', 'architecture', 'variant', 'formats', 'runner', 'outputGlobs', 'environment', 'signing']);
+const TARGET_CONFIG_KEYS = Object.freeze([
+  'id',
+  'packageId',
+  'deploymentProfile',
+  'runtimeTarget',
+  'profile',
+  'platform',
+  'distribution',
+  'architecture',
+  'variant',
+  'formats',
+  'runner',
+  'outputGlobs',
+  'environment',
+  'signing',
+]);
 const SECURITY_CONFIG_KEYS = Object.freeze(['oidcRequired', 'artifactAttestations', 'sbomRequired', 'signingRequired']);
 const PUBLISH_CONFIG_KEYS = Object.freeze([
   'workflowArtifact',
@@ -105,7 +189,22 @@ const PUBLISH_CONFIG_KEYS = Object.freeze([
   'aggregateUploadGlobs',
   'retentionDays',
 ]);
-const DEPLOYMENT_CONFIG_KEYS = Object.freeze(['id', 'environment', 'url', 'runner', 'profile', 'platform', 'architecture', 'variant', 'format', 'targetId', 'packageId', 'lifecycle']);
+const DEPLOYMENT_CONFIG_KEYS = Object.freeze([
+  'id',
+  'environment',
+  'url',
+  'runner',
+  'deploymentProfile',
+  'runtimeTarget',
+  'profile',
+  'platform',
+  'architecture',
+  'variant',
+  'format',
+  'targetId',
+  'packageId',
+  'lifecycle',
+]);
 const CHANGELOG_CONFIG_KEYS = Object.freeze(['enabled', 'source', 'path', 'includeCommitSubjects', 'maxCommitSubjects']);
 const SUPPORTED_CHANGELOG_SOURCES = Object.freeze(['auto', 'app-manifest', 'file', 'git', 'none']);
 const FRAMEWORK_CHECKOUT_PATH = '.sdkwork/github-workflow';
@@ -125,6 +224,10 @@ Commands:
 
 Options:
   --config <path>        Config path (default sdkwork.workflow.json).
+  --deployment-profile <value>
+                         Deployment profile filter, or all.
+  --runtime-target <value>
+                         Runtime target filter, or all.
   --platform <value>     Platform filter, or all.
   --architecture <value> Architecture filter, or all.
   --profile <value>      Profile filter, or all.
@@ -166,6 +269,8 @@ function parseArgs(argv = process.argv.slice(2)) {
   const settings = {
     command,
     configPath: 'sdkwork.workflow.json',
+    deploymentProfile: 'all',
+    runtimeTarget: 'all',
     platform: 'all',
     architecture: 'all',
     profile: 'all',
@@ -201,6 +306,14 @@ function parseArgs(argv = process.argv.slice(2)) {
     switch (arg) {
       case '--config':
         settings.configPath = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--deployment-profile':
+        settings.deploymentProfile = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--runtime-target':
+        settings.runtimeTarget = requireValue(argv, index, arg);
         index += 1;
         break;
       case '--platform':
@@ -460,7 +573,8 @@ function validateWorkflowConfig(config) {
   validateArray(config.targets, 'targets', issues, { minLength: 1 });
   if (Array.isArray(config.targets)) {
     const seenIds = new Set();
-    config.targets.forEach((target, index) => validateTarget(target, index, issues, seenIds));
+    const seenPackageIds = new Set();
+    config.targets.forEach((target, index) => validateTarget(target, index, issues, seenIds, seenPackageIds));
   }
 
   if (config.security !== undefined) {
@@ -588,7 +702,7 @@ function validateLifecycleStep(step, label, issues) {
   }
 }
 
-function validateTarget(target, index, issues, seenIds) {
+function validateTarget(target, index, issues, seenIds, seenPackageIds) {
   const label = `targets[${index}]`;
   validateObject(target, label, issues);
   validateKnownProperties(target, label, TARGET_CONFIG_KEYS, issues);
@@ -600,6 +714,8 @@ function validateTarget(target, index, issues, seenIds) {
     seenIds.add(target.id);
   }
   validateOptionalString(target?.packageId, `${label}.packageId`, issues, { pattern: PACKAGE_ID_PATTERN });
+  validateEnum(target?.deploymentProfile, `${label}.deploymentProfile`, SUPPORTED_DEPLOYMENT_PROFILES, issues);
+  validateEnum(target?.runtimeTarget, `${label}.runtimeTarget`, SUPPORTED_RUNTIME_TARGETS, issues);
   validateEnum(target?.profile, `${label}.profile`, SUPPORTED_PROFILES, issues);
   validateEnum(target?.platform, `${label}.platform`, SUPPORTED_PLATFORMS, issues);
   if (target?.distribution !== undefined) {
@@ -617,8 +733,10 @@ function validateTarget(target, index, issues, seenIds) {
     );
   }
   validateLinuxDistribution(target, label, issues);
+  validateTargetRuntimeConsistency(target, label, issues);
   validateTargetId(target, label, issues);
   validateTargetPackageId(target, label, issues);
+  validateUniquePackageIds(target, label, issues, seenPackageIds);
   validateRequiredString(target?.runner, `${label}.runner`, issues);
   validateArray(target?.outputGlobs, `${label}.outputGlobs`, issues, { minLength: 1 });
   if (Array.isArray(target?.outputGlobs)) {
@@ -631,6 +749,16 @@ function validateTarget(target, index, issues, seenIds) {
   }
   if (target?.signing !== undefined && typeof target.signing !== 'boolean') {
     issues.push(`${label}.signing must be a boolean`);
+  }
+}
+
+function validateTargetRuntimeConsistency(target, label, issues) {
+  if (typeof target?.profile !== 'string' || typeof target.runtimeTarget !== 'string') {
+    return;
+  }
+  const supportedRuntimeTargets = PROFILE_RUNTIME_TARGETS[target.profile];
+  if (!supportedRuntimeTargets || !supportedRuntimeTargets.includes(target.runtimeTarget)) {
+    issues.push(`${label}.runtimeTarget ${target.runtimeTarget} is not valid for package profile ${target.profile}`);
   }
 }
 
@@ -672,6 +800,7 @@ function validateTargetId(target, label, issues) {
     typeof target?.id !== 'string'
     || typeof target.platform !== 'string'
     || typeof target.architecture !== 'string'
+    || typeof target.deploymentProfile !== 'string'
     || typeof target.profile !== 'string'
     || !Array.isArray(target.formats)
     || target.formats.length === 0
@@ -694,6 +823,7 @@ function validateTargetPackageId(target, label, issues) {
   if (
     typeof target.platform !== 'string'
     || typeof target.architecture !== 'string'
+    || typeof target.deploymentProfile !== 'string'
     || typeof target.profile !== 'string'
     || !Array.isArray(target.formats)
     || target.formats.length === 0
@@ -707,6 +837,34 @@ function validateTargetPackageId(target, label, issues) {
   const expectedPackageId = canonicalPackageIdForTarget(target, target.formats[0]);
   if (target.packageId !== expectedPackageId) {
     issues.push(`${label}.packageId must be ${expectedPackageId}`);
+  }
+}
+
+function validateUniquePackageIds(target, label, issues, seenPackageIds) {
+  if (!Array.isArray(target?.formats) || target.formats.length === 0) {
+    return;
+  }
+  if (
+    typeof target.platform !== 'string'
+    || typeof target.architecture !== 'string'
+    || typeof target.deploymentProfile !== 'string'
+    || typeof target.profile !== 'string'
+  ) {
+    return;
+  }
+  for (const format of target.formats) {
+    if (typeof format !== 'string') {
+      continue;
+    }
+    const packageId = packageIdForTarget(target, format);
+    if (!PACKAGE_ID_PATTERN.test(packageId)) {
+      continue;
+    }
+    if (seenPackageIds.has(packageId)) {
+      issues.push(`${label}.packageId is duplicated: ${packageId}`);
+      continue;
+    }
+    seenPackageIds.add(packageId);
   }
 }
 
@@ -726,6 +884,12 @@ function validateDeployment(deployment, index, issues, seenIds) {
   });
   validateOptionalString(deployment?.runner, `${label}.runner`, issues);
   validateOptionalString(deployment?.url, `${label}.url`, issues);
+  if (deployment?.deploymentProfile !== undefined) {
+    validateEnum(deployment.deploymentProfile, `${label}.deploymentProfile`, SUPPORTED_DEPLOYMENT_PROFILES, issues);
+  }
+  if (deployment?.runtimeTarget !== undefined) {
+    validateEnum(deployment.runtimeTarget, `${label}.runtimeTarget`, SUPPORTED_RUNTIME_TARGETS, issues);
+  }
   if (deployment?.profile !== undefined) {
     validateEnum(deployment.profile, `${label}.profile`, SUPPORTED_PROFILES, issues);
   }
@@ -775,6 +939,8 @@ function deploymentMatchesAnyTarget(deployment, targets) {
       if (deploymentMatchesPackage(deployment, {
         id: target.id,
         packageId: packageIdForTarget(target, format),
+        deploymentProfile: target.deploymentProfile,
+        runtimeTarget: target.runtimeTarget,
         profile: target.profile,
         platform: target.platform,
         ...(target.distribution ? { distribution: target.distribution } : {}),
@@ -1033,6 +1199,8 @@ function createPackageMatrix(config, filters = {}) {
   }
 
   const normalizedFilters = {
+    deploymentProfile: filters.deploymentProfile ?? 'all',
+    runtimeTarget: filters.runtimeTarget ?? 'all',
     platform: filters.platform ?? 'all',
     architecture: filters.architecture ?? 'all',
     profile: filters.profile ?? 'all',
@@ -1042,6 +1210,12 @@ function createPackageMatrix(config, filters = {}) {
 
   const include = [];
   for (const target of config.targets) {
+    if (!matchesFilter(target.deploymentProfile, normalizedFilters.deploymentProfile)) {
+      continue;
+    }
+    if (!matchesFilter(target.runtimeTarget, normalizedFilters.runtimeTarget)) {
+      continue;
+    }
     if (!matchesFilter(target.platform, normalizedFilters.platform)) {
       continue;
     }
@@ -1062,6 +1236,8 @@ function createPackageMatrix(config, filters = {}) {
       const packageId = packageIdForTarget(target, format);
       include.push({
         id: target.id,
+        deploymentProfile: target.deploymentProfile,
+        runtimeTarget: target.runtimeTarget,
         profile: target.profile,
         platform: target.platform,
         ...(target.distribution ? { distribution: target.distribution } : {}),
@@ -1081,7 +1257,7 @@ function createPackageMatrix(config, filters = {}) {
 
   if (include.length === 0) {
     throw new Error(
-      `No package targets selected for platform=${normalizedFilters.platform}, architecture=${normalizedFilters.architecture}, profile=${normalizedFilters.profile}, variant=${normalizedFilters.variant}, format=${normalizedFilters.format}`,
+      `No package targets selected for deploymentProfile=${normalizedFilters.deploymentProfile}, runtimeTarget=${normalizedFilters.runtimeTarget}, platform=${normalizedFilters.platform}, architecture=${normalizedFilters.architecture}, profile=${normalizedFilters.profile}, variant=${normalizedFilters.variant}, format=${normalizedFilters.format}`,
     );
   }
 
@@ -1110,6 +1286,8 @@ function createDeploymentMatrix(config, { packageMatrix = null, filters = {} } =
         lifecycle: deployment.lifecycle ?? 'deploy',
         targetId: packageItem.id,
         packageId: packageItem.packageId,
+        deploymentProfile: packageItem.deploymentProfile,
+        runtimeTarget: packageItem.runtimeTarget,
         profile: packageItem.profile,
         platform: packageItem.platform,
         ...(packageItem.distribution ? { distribution: packageItem.distribution } : {}),
@@ -1124,7 +1302,9 @@ function createDeploymentMatrix(config, { packageMatrix = null, filters = {} } =
 }
 
 function deploymentMatchesPackage(deployment, packageItem) {
-  return matchesFilter(packageItem.profile, deployment.profile ?? 'all')
+  return matchesFilter(packageItem.deploymentProfile, deployment.deploymentProfile ?? 'all')
+    && matchesFilter(packageItem.runtimeTarget, deployment.runtimeTarget ?? 'all')
+    && matchesFilter(packageItem.profile, deployment.profile ?? 'all')
     && matchesFilter(packageItem.platform, deployment.platform ?? 'all')
     && matchesFilter(packageItem.architecture, deployment.architecture ?? 'all')
     && matchesFilter(packageItem.variant ?? '', deployment.variant ?? 'all')
@@ -1139,13 +1319,13 @@ function packageIdForTarget(target, format) {
 
 function canonicalPackageIdForTarget(target, format) {
   if (target.platform === 'linux' && isLinuxNativePackageFormat(format) && target.distribution) {
-    return joinPackageIdSegments(target.platform, target.distribution, target.architecture, target.profile, target.variant, formatToken(format));
+    return joinPackageIdSegments(target.platform, target.distribution, target.architecture, target.deploymentProfile, target.profile, target.variant, formatToken(format));
   }
-  return joinPackageIdSegments(target.platform, target.architecture, target.profile, target.variant, formatToken(format));
+  return joinPackageIdSegments(target.platform, target.architecture, target.deploymentProfile, target.profile, target.variant, formatToken(format));
 }
 
 function targetGroupIdForTarget(target) {
-  return joinPackageIdSegments(target.platform, target.architecture, target.profile, target.variant);
+  return joinPackageIdSegments(target.platform, target.architecture, target.deploymentProfile, target.profile, target.variant);
 }
 
 function joinPackageIdSegments(...segments) {
@@ -1278,6 +1458,8 @@ function createWorkflowSummary(config, matrix, { version = null, releaseTag = nu
     },
     version: resolvePackageVersion(config, { version, releaseTag }),
     targets: matrix.include.length,
+    deploymentProfiles: unique(matrix.include.map((item) => item.deploymentProfile)),
+    runtimeTargets: unique(matrix.include.map((item) => item.runtimeTarget)),
     profiles: unique(matrix.include.map((item) => item.profile)),
     platforms: unique(matrix.include.map((item) => item.platform)),
     architectures: unique(matrix.include.map((item) => item.architecture)),
@@ -1487,7 +1669,7 @@ function appendPackageSummary(lines, packageItems) {
   lines.push('## Packages', '');
   packageItems.forEach((item) => {
     const platform = item.distribution ? `${item.platform}/${item.distribution}` : item.platform;
-    lines.push(`- ${item.packageId} (${platform}, ${item.architecture}, ${item.profile}, ${item.format})`);
+    lines.push(`- ${item.packageId} (${item.deploymentProfile}, ${item.runtimeTarget}, ${platform}, ${item.architecture}, ${item.profile}, ${item.format})`);
   });
   lines.push('');
 }
@@ -1569,6 +1751,8 @@ function createLifecyclePlan(config, {
     SDKWORK_APP_ID: config.app.id,
     SDKWORK_APP_REPOSITORY: config.app.repository,
     SDKWORK_APP_SOURCE_PATH: config.app.sourcePath ?? '.',
+    ...(effectiveMatrixItem.deploymentProfile ? { SDKWORK_DEPLOYMENT_PROFILE: effectiveMatrixItem.deploymentProfile } : {}),
+    ...(effectiveMatrixItem.runtimeTarget ? { SDKWORK_RUNTIME_TARGET: effectiveMatrixItem.runtimeTarget } : {}),
     SDKWORK_PACKAGE_ARCHITECTURE: effectiveMatrixItem.architecture,
     SDKWORK_PACKAGE_FORMAT: effectiveMatrixItem.format,
     SDKWORK_PACKAGE_ID: effectiveMatrixItem.packageId,
@@ -1835,10 +2019,10 @@ function nodePlaceholderStep(...parts) {
 
 function defaultToolchainsForProfiles(profiles) {
   const toolchains = {};
-  if (profiles.some((profile) => ['web', 'desktop', 'mobile', 'tablet', 'server'].includes(profile))) {
+  if (profiles.some((profile) => ['browser', 'desktop', 'mobile', 'tablet', 'mini-program', 'server', 'container', 'worker'].includes(profile))) {
     toolchains.node = '22';
   }
-  if (profiles.some((profile) => ['web', 'desktop', 'server'].includes(profile))) {
+  if (profiles.some((profile) => ['browser', 'desktop', 'server', 'container', 'worker'].includes(profile))) {
     toolchains.pnpm = '10.33.0';
   }
   if (profiles.includes('server')) {
@@ -1860,7 +2044,9 @@ function defaultTargetsForProfile(profile) {
   if (profile === 'server') {
     return [
       {
-        id: 'linux-debian-x64-server-deb',
+        id: 'linux-debian-x64-standalone-server-deb',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'debian',
@@ -1870,7 +2056,9 @@ function defaultTargetsForProfile(profile) {
         outputGlobs: ['dist/server/*.deb'],
       },
       {
-        id: 'linux-rhel-x64-server-rpm',
+        id: 'linux-rhel-x64-standalone-server-rpm',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'rhel',
@@ -1880,7 +2068,9 @@ function defaultTargetsForProfile(profile) {
         outputGlobs: ['dist/server/*.rpm'],
       },
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1893,7 +2083,9 @@ function defaultTargetsForProfile(profile) {
   if (profile === 'desktop') {
     return [
       {
-        id: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -1902,7 +2094,9 @@ function defaultTargetsForProfile(profile) {
         outputGlobs: ['dist/desktop/*.msi'],
       },
       {
-        id: 'windows-x64-desktop-exe',
+        id: 'windows-x64-standalone-desktop-exe',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -1911,7 +2105,9 @@ function defaultTargetsForProfile(profile) {
         outputGlobs: ['dist/desktop/*.exe'],
       },
       {
-        id: 'macos-arm64-desktop-dmg',
+        id: 'macos-arm64-standalone-desktop-dmg',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'macos',
         architecture: 'arm64',
@@ -1924,7 +2120,9 @@ function defaultTargetsForProfile(profile) {
   if (profile === 'mobile') {
     return [
       {
-        id: 'android-arm64-mobile-aab',
+        id: 'android-arm64-standalone-mobile-aab',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'flutter-android',
         profile: 'mobile',
         platform: 'android',
         architecture: 'arm64',
@@ -1933,7 +2131,9 @@ function defaultTargetsForProfile(profile) {
         outputGlobs: ['build/app/outputs/bundle/release/*.aab'],
       },
       {
-        id: 'ios-universal-mobile-ipa',
+        id: 'ios-universal-standalone-mobile-ipa',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'flutter-ios',
         profile: 'mobile',
         platform: 'ios',
         architecture: 'universal',
@@ -1946,7 +2146,9 @@ function defaultTargetsForProfile(profile) {
   if (profile === 'tablet') {
     return [
       {
-        id: 'ipados-universal-tablet-ipa',
+        id: 'ipados-universal-standalone-tablet-ipa',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'tablet-ipados',
         profile: 'tablet',
         platform: 'ipados',
         architecture: 'universal',
@@ -1955,7 +2157,9 @@ function defaultTargetsForProfile(profile) {
         outputGlobs: ['build/ipados/ipa/*.ipa'],
       },
       {
-        id: 'android-tablet-arm64-tablet-aab',
+        id: 'android-tablet-arm64-standalone-tablet-aab',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'tablet-android',
         profile: 'tablet',
         platform: 'android-tablet',
         architecture: 'arm64',
@@ -1964,7 +2168,9 @@ function defaultTargetsForProfile(profile) {
         outputGlobs: ['build/app/outputs/bundle/tabletRelease/*.aab'],
       },
       {
-        id: 'windows-tablet-x64-tablet-msix',
+        id: 'windows-tablet-x64-standalone-tablet-msix',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'tablet',
         platform: 'windows-tablet',
         architecture: 'x64',
@@ -1974,23 +2180,42 @@ function defaultTargetsForProfile(profile) {
       },
     ];
   }
-  if (profile === 'web') {
+  if (profile === 'browser') {
     return [
       {
-        id: 'web-noarch-web-static',
-        profile: 'web',
+        id: 'web-universal-cloud-browser-web-url',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'browser',
+        profile: 'browser',
         platform: 'web',
-        architecture: 'noarch',
-        formats: ['static'],
+        architecture: 'universal',
+        formats: ['web-url'],
         runner: 'ubuntu-24.04',
         outputGlobs: ['dist/web/**'],
+      },
+    ];
+  }
+  if (profile === 'container') {
+    return [
+      {
+        id: 'container-x64-cloud-container-oci',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'container',
+        profile: 'container',
+        platform: 'container',
+        architecture: 'x64',
+        formats: ['oci'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/container/*.tar'],
       },
     ];
   }
   if (profile === 'worker') {
     return [
       {
-        id: 'container-x64-worker-oci',
+        id: 'container-x64-cloud-worker-oci',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'container',
         profile: 'worker',
         platform: 'container',
         architecture: 'x64',
@@ -2000,12 +2225,44 @@ function defaultTargetsForProfile(profile) {
       },
     ];
   }
+  if (profile === 'mini-program') {
+    return [
+      {
+        id: 'mp-weixin-universal-cloud-mini-program-mini-program-package',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'mini-program',
+        profile: 'mini-program',
+        platform: 'mp-weixin',
+        architecture: 'universal',
+        formats: ['mini-program-package'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/mini-program/**'],
+      },
+    ];
+  }
+  if (profile === 'test') {
+    return [
+      {
+        id: 'test-noarch-standalone-test-zip',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'test-runner',
+        profile: 'test',
+        platform: 'test',
+        architecture: 'noarch',
+        formats: ['zip'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/test/*.zip'],
+      },
+    ];
+  }
   return [
     {
-      id: 'web-noarch-library-zip',
+      id: 'web-universal-cloud-library-zip',
+      deploymentProfile: 'cloud',
+      runtimeTarget: 'browser',
       profile: 'library',
       platform: 'web',
-      architecture: 'noarch',
+      architecture: 'universal',
       formats: ['zip'],
       runner: 'ubuntu-24.04',
       outputGlobs: ['dist/library/*.zip'],
@@ -2019,15 +2276,19 @@ function defaultDeploymentsForProfiles(profiles) {
     deployments.push({
       id: 'production-server',
       environment: 'production',
+      deploymentProfile: 'standalone',
+      runtimeTarget: 'server',
       profile: 'server',
       lifecycle: 'deploy',
     });
   }
-  if (profiles.includes('web')) {
+  if (profiles.includes('browser')) {
     deployments.push({
-      id: 'production-web',
-      environment: 'production-web',
-      profile: 'web',
+      id: 'production-browser',
+      environment: 'production-browser',
+      deploymentProfile: 'cloud',
+      runtimeTarget: 'browser',
+      profile: 'browser',
       lifecycle: 'deploy',
     });
   }
@@ -2035,6 +2296,7 @@ function defaultDeploymentsForProfiles(profiles) {
     deployments.push({
       id: 'production-mobile',
       environment: 'production-mobile',
+      deploymentProfile: 'standalone',
       profile: 'mobile',
       lifecycle: 'publish',
     });
@@ -2043,6 +2305,7 @@ function defaultDeploymentsForProfiles(profiles) {
     deployments.push({
       id: 'production-tablet',
       environment: 'production-tablet',
+      deploymentProfile: 'standalone',
       profile: 'tablet',
       lifecycle: 'publish',
     });
@@ -2051,7 +2314,29 @@ function defaultDeploymentsForProfiles(profiles) {
     deployments.push({
       id: 'production-desktop',
       environment: 'production-desktop',
+      deploymentProfile: 'standalone',
+      runtimeTarget: 'desktop',
       profile: 'desktop',
+      lifecycle: 'publish',
+    });
+  }
+  if (profiles.includes('container')) {
+    deployments.push({
+      id: 'production-container',
+      environment: 'production-container',
+      deploymentProfile: 'cloud',
+      runtimeTarget: 'container',
+      profile: 'container',
+      lifecycle: 'deploy',
+    });
+  }
+  if (profiles.includes('mini-program')) {
+    deployments.push({
+      id: 'production-mini-program',
+      environment: 'production-mini-program',
+      deploymentProfile: 'cloud',
+      runtimeTarget: 'mini-program',
+      profile: 'mini-program',
       lifecycle: 'publish',
     });
   }

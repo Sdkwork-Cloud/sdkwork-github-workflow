@@ -63,7 +63,9 @@ test('validates the minimal cross-platform workflow config', async () => {
     },
     targets: [
       {
-        id: 'linux-debian-x64-server-deb',
+        id: 'linux-debian-x64-standalone-server-deb',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'debian',
@@ -73,7 +75,9 @@ test('validates the minimal cross-platform workflow config', async () => {
         outputGlobs: ['dist/install-packages/*.deb', 'dist/install-packages/*.manifest.json'],
       },
       {
-        id: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -82,7 +86,9 @@ test('validates the minimal cross-platform workflow config', async () => {
         outputGlobs: ['dist/install-packages/*.msi', 'dist/install-packages/*.manifest.json'],
       },
       {
-        id: 'android-arm64-mobile-aab',
+        id: 'android-arm64-standalone-mobile-aab',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'flutter-android',
         profile: 'mobile',
         platform: 'android',
         architecture: 'arm64',
@@ -104,6 +110,8 @@ test('rejects unsupported platforms, empty target formats, and unsafe output glo
     targets: [
       {
         id: 'bad',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'solaris',
         architecture: 'x64',
@@ -130,7 +138,9 @@ test('rejects dynamic uses steps in lifecycle config', () => {
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -155,7 +165,9 @@ test('enforces required signing and SBOM security lifecycle policies', () => {
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -164,7 +176,9 @@ test('enforces required signing and SBOM security lifecycle policies', () => {
         outputGlobs: ['dist/*.tar.gz'],
       },
       {
-        id: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -203,7 +217,9 @@ test('rejects unknown workflow config properties so schema and planner stay alig
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -273,7 +289,9 @@ test('rejects duplicate target formats before matrix planning', () => {
     release: { artifactPrefix: 'duplicate-format' },
     targets: [
       {
-        id: 'linux-x64-server-zip',
+        id: 'linux-x64-standalone-server-zip',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -288,14 +306,19 @@ test('rejects duplicate target formats before matrix planning', () => {
   assert.ok(issues.some((issue) => issue.includes('targets[0].formats must not contain duplicate values')));
 });
 
-test('uses canonical package ids and artifact names for app profiles and platforms', () => {
+test('uses deployment profile and runtime target in canonical package ids and lifecycle environment', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
-    app: { id: 'demo', repository: 'Org/demo' },
-    release: { artifactPrefix: 'demo' },
+    app: { id: 'runtime-demo', repository: 'Org/runtime-demo' },
+    release: { artifactPrefix: 'runtime-demo' },
+    lifecycle: {
+      package: [{ run: 'echo "$SDKWORK_DEPLOYMENT_PROFILE $SDKWORK_RUNTIME_TARGET"' }],
+    },
     targets: [
       {
-        id: 'linux-debian-x64-server-deb',
+        id: 'linux-debian-x64-standalone-server-deb',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'debian',
@@ -305,7 +328,180 @@ test('uses canonical package ids and artifact names for app profiles and platfor
         outputGlobs: ['dist/server/*.deb'],
       },
       {
-        id: 'linux-rhel-x64-server-rpm',
+        id: 'web-universal-cloud-browser-web-url',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'browser',
+        profile: 'browser',
+        platform: 'web',
+        architecture: 'universal',
+        formats: ['web-url'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/web/**'],
+      },
+    ],
+  };
+
+  assert.deepEqual(validateWorkflowConfig(config), []);
+
+  const matrix = createPackageMatrix(config, { platform: 'linux', format: 'deb' });
+  assert.deepEqual(matrix.include[0], {
+    id: 'linux-debian-x64-standalone-server-deb',
+    deploymentProfile: 'standalone',
+    runtimeTarget: 'server',
+    profile: 'server',
+    platform: 'linux',
+    distribution: 'debian',
+    architecture: 'x64',
+    format: 'deb',
+    runner: 'ubuntu-24.04',
+    packageId: 'linux-debian-x64-standalone-server-deb',
+    artifactName: 'runtime-demo-linux-debian-x64-standalone-server-deb',
+    outputGlobs: ['dist/server/*.deb'],
+    outputGlobsText: 'dist/server/*.deb',
+  });
+
+  const plan = createLifecyclePlan(config, {
+    phase: 'package',
+    matrixItem: matrix.include[0],
+    version: '1.0.0',
+  });
+
+  assert.equal(plan.steps[0].env.SDKWORK_DEPLOYMENT_PROFILE, 'standalone');
+  assert.equal(plan.steps[0].env.SDKWORK_RUNTIME_TARGET, 'server');
+});
+
+test('requires deploymentProfile and runtimeTarget on every package target', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'missing-runtime-fields', repository: 'Org/missing-runtime-fields' },
+    release: { artifactPrefix: 'missing-runtime-fields' },
+    targets: [
+      {
+        id: 'linux-x64-standalone-server-tar-gz',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+    ],
+  };
+
+  const issues = validateWorkflowConfig(config);
+
+  assert.ok(issues.some((issue) => issue.includes('targets[0].deploymentProfile')));
+  assert.ok(issues.some((issue) => issue.includes('targets[0].runtimeTarget')));
+});
+
+test('rejects deployment, runtime target, and package profile axis mixups', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'bad-target-taxonomy', repository: 'Org/bad-target-taxonomy' },
+    release: { artifactPrefix: 'bad-target-taxonomy' },
+    targets: [
+      {
+        id: 'web-universal-cloud-web-web-url',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'browser',
+        profile: 'web',
+        platform: 'web',
+        architecture: 'universal',
+        formats: ['web-url'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/web/**'],
+      },
+      {
+        id: 'container-x64-docker-container-oci',
+        deploymentProfile: 'docker',
+        runtimeTarget: 'container',
+        profile: 'container',
+        platform: 'container',
+        architecture: 'x64',
+        formats: ['oci'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/container/*.tar'],
+      },
+      {
+        id: 'android-arm64-standalone-mobile-aab',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'mobile',
+        profile: 'mobile',
+        platform: 'android',
+        architecture: 'arm64',
+        formats: ['aab'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['build/app/outputs/bundle/release/*.aab'],
+      },
+    ],
+  };
+
+  const issues = validateWorkflowConfig(config);
+
+  assert.ok(issues.some((issue) => issue.includes('targets[0].profile')));
+  assert.ok(issues.some((issue) => issue.includes('targets[1].deploymentProfile')));
+  assert.ok(issues.some((issue) => issue.includes('targets[2].runtimeTarget')));
+});
+
+test('rejects duplicate generated package ids after deployment profile normalization', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'duplicate-package-id', repository: 'Org/duplicate-package-id' },
+    release: { artifactPrefix: 'duplicate-package-id' },
+    targets: [
+      {
+        id: 'container-x64-cloud-container-oci',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'container',
+        profile: 'container',
+        platform: 'container',
+        architecture: 'x64',
+        formats: ['oci'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/container/*.tar'],
+      },
+      {
+        id: 'container-x64-cloud-container-oci-copy',
+        packageId: 'container-x64-cloud-container-oci',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'container',
+        profile: 'container',
+        platform: 'container',
+        architecture: 'x64',
+        formats: ['oci'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/container-copy/*.tar'],
+      },
+    ],
+  };
+
+  const issues = validateWorkflowConfig(config);
+
+  assert.ok(issues.some((issue) => issue.includes('packageId is duplicated: container-x64-cloud-container-oci')));
+});
+
+test('uses canonical package ids and artifact names for app profiles and platforms', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'demo', repository: 'Org/demo' },
+    release: { artifactPrefix: 'demo' },
+    targets: [
+      {
+        id: 'linux-debian-x64-standalone-server-deb',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        profile: 'server',
+        platform: 'linux',
+        distribution: 'debian',
+        architecture: 'x64',
+        formats: ['deb'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/server/*.deb'],
+      },
+      {
+        id: 'linux-rhel-x64-standalone-server-rpm',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'rhel',
@@ -315,7 +511,9 @@ test('uses canonical package ids and artifact names for app profiles and platfor
         outputGlobs: ['dist/server/*.rpm'],
       },
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -324,7 +522,9 @@ test('uses canonical package ids and artifact names for app profiles and platfor
         outputGlobs: ['dist/server/*.tar.gz'],
       },
       {
-        id: 'windows-x64-desktop',
+        id: 'windows-x64-standalone-desktop',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -333,7 +533,9 @@ test('uses canonical package ids and artifact names for app profiles and platfor
         outputGlobs: ['dist/desktop/*'],
       },
       {
-        id: 'android-arm64-mobile-aab',
+        id: 'android-arm64-standalone-mobile-aab',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'flutter-android',
         profile: 'mobile',
         platform: 'android',
         architecture: 'arm64',
@@ -342,7 +544,9 @@ test('uses canonical package ids and artifact names for app profiles and platfor
         outputGlobs: ['build/app/outputs/bundle/release/*.aab'],
       },
       {
-        id: 'ipados-universal-tablet-ipa',
+        id: 'ipados-universal-standalone-tablet-ipa',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'tablet-ipados',
         profile: 'tablet',
         platform: 'ipados',
         architecture: 'universal',
@@ -358,13 +562,13 @@ test('uses canonical package ids and artifact names for app profiles and platfor
   assert.deepEqual(
     matrix.include.map((item) => [item.packageId, item.artifactName]),
     [
-      ['linux-debian-x64-server-deb', 'demo-linux-debian-x64-server-deb'],
-      ['linux-rhel-x64-server-rpm', 'demo-linux-rhel-x64-server-rpm'],
-      ['linux-x64-server-tar-gz', 'demo-linux-x64-server-tar-gz'],
-      ['windows-x64-desktop-msi', 'demo-windows-x64-desktop-msi'],
-      ['windows-x64-desktop-exe', 'demo-windows-x64-desktop-exe'],
-      ['android-arm64-mobile-aab', 'demo-android-arm64-mobile-aab'],
-      ['ipados-universal-tablet-ipa', 'demo-ipados-universal-tablet-ipa'],
+      ['linux-debian-x64-standalone-server-deb', 'demo-linux-debian-x64-standalone-server-deb'],
+      ['linux-rhel-x64-standalone-server-rpm', 'demo-linux-rhel-x64-standalone-server-rpm'],
+      ['linux-x64-standalone-server-tar-gz', 'demo-linux-x64-standalone-server-tar-gz'],
+      ['windows-x64-standalone-desktop-msi', 'demo-windows-x64-standalone-desktop-msi'],
+      ['windows-x64-standalone-desktop-exe', 'demo-windows-x64-standalone-desktop-exe'],
+      ['android-arm64-standalone-mobile-aab', 'demo-android-arm64-standalone-mobile-aab'],
+      ['ipados-universal-standalone-tablet-ipa', 'demo-ipados-universal-standalone-tablet-ipa'],
     ],
   );
 });
@@ -379,8 +583,10 @@ test('uses canonical variant package ids and lifecycle environment for deploymen
     },
     targets: [
       {
-        id: 'container-x64-server-cpu-tar-gz',
-        profile: 'server',
+        id: 'container-x64-cloud-container-cpu-tar-gz',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'container',
+        profile: 'container',
         platform: 'container',
         architecture: 'x64',
         variant: 'cpu',
@@ -389,8 +595,10 @@ test('uses canonical variant package ids and lifecycle environment for deploymen
         outputGlobs: ['artifacts/release/container/linux/x64/cpu/*.tar.gz'],
       },
       {
-        id: 'container-x64-server-nvidia-cuda-tar-gz',
-        profile: 'server',
+        id: 'container-x64-cloud-container-nvidia-cuda-tar-gz',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'container',
+        profile: 'container',
         platform: 'container',
         architecture: 'x64',
         variant: 'nvidia-cuda',
@@ -408,8 +616,8 @@ test('uses canonical variant package ids and lifecycle environment for deploymen
   assert.deepEqual(
     matrix.include.map((item) => [item.packageId, item.artifactName, item.variant]),
     [
-      ['container-x64-server-cpu-tar-gz', 'variant-demo-container-x64-server-cpu-tar-gz', 'cpu'],
-      ['container-x64-server-nvidia-cuda-tar-gz', 'variant-demo-container-x64-server-nvidia-cuda-tar-gz', 'nvidia-cuda'],
+      ['container-x64-cloud-container-cpu-tar-gz', 'variant-demo-container-x64-cloud-container-cpu-tar-gz', 'cpu'],
+      ['container-x64-cloud-container-nvidia-cuda-tar-gz', 'variant-demo-container-x64-cloud-container-nvidia-cuda-tar-gz', 'nvidia-cuda'],
     ],
   );
 
@@ -429,9 +637,11 @@ test('rejects non-canonical variant target ids and package ids', () => {
     release: { artifactPrefix: 'bad-variant' },
     targets: [
       {
-        id: 'container-x64-server-tar-gz',
-        packageId: 'container-x64-server-tar-gz',
-        profile: 'server',
+        id: 'container-x64-cloud-container-tar-gz',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'container',
+        packageId: 'container-x64-cloud-container-tar-gz',
+        profile: 'container',
         platform: 'container',
         architecture: 'x64',
         variant: 'nvidia-cuda',
@@ -443,8 +653,8 @@ test('rejects non-canonical variant target ids and package ids', () => {
   };
 
   const issues = validateWorkflowConfig(config);
-  assert.ok(issues.some((issue) => issue.includes('targets[0].id must be container-x64-server-nvidia-cuda-tar-gz')));
-  assert.ok(issues.some((issue) => issue.includes('targets[0].packageId must be container-x64-server-nvidia-cuda-tar-gz')));
+  assert.ok(issues.some((issue) => issue.includes('targets[0].id must be container-x64-cloud-container-nvidia-cuda-tar-gz')));
+  assert.ok(issues.some((issue) => issue.includes('targets[0].packageId must be container-x64-cloud-container-nvidia-cuda-tar-gz')));
 });
 
 test('rejects non-canonical explicit target package ids', () => {
@@ -454,7 +664,9 @@ test('rejects non-canonical explicit target package ids', () => {
     release: { artifactPrefix: 'bad-package-id' },
     targets: [
       {
-        id: 'linux-debian-x64-server-deb',
+        id: 'linux-debian-x64-standalone-server-deb',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         packageId: 'linux-x64-service',
         profile: 'server',
         platform: 'linux',
@@ -468,7 +680,7 @@ test('rejects non-canonical explicit target package ids', () => {
   };
 
   const issues = validateWorkflowConfig(config);
-  assert.ok(issues.some((issue) => issue.includes('targets[0].packageId must be linux-debian-x64-server-deb')));
+  assert.ok(issues.some((issue) => issue.includes('targets[0].packageId must be linux-debian-x64-standalone-server-deb')));
 });
 
 test('rejects non-canonical target ids for single-format targets', () => {
@@ -478,7 +690,9 @@ test('rejects non-canonical target ids for single-format targets', () => {
     release: { artifactPrefix: 'bad-target-id' },
     targets: [
       {
-        id: 'linux-x64-server-tgz',
+        id: 'linux-x64-standalone-server-tgz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -490,7 +704,7 @@ test('rejects non-canonical target ids for single-format targets', () => {
   };
 
   const issues = validateWorkflowConfig(config);
-  assert.ok(issues.some((issue) => issue.includes('targets[0].id must be linux-x64-server-tar-gz')));
+  assert.ok(issues.some((issue) => issue.includes('targets[0].id must be linux-x64-standalone-server-tar-gz')));
 });
 
 test('rejects format-suffixed target ids for multi-format targets', () => {
@@ -500,7 +714,9 @@ test('rejects format-suffixed target ids for multi-format targets', () => {
     release: { artifactPrefix: 'bad-target-group-id' },
     targets: [
       {
-        id: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -512,7 +728,7 @@ test('rejects format-suffixed target ids for multi-format targets', () => {
   };
 
   const issues = validateWorkflowConfig(config);
-  assert.ok(issues.some((issue) => issue.includes('targets[0].id must be windows-x64-desktop')));
+  assert.ok(issues.some((issue) => issue.includes('targets[0].id must be windows-x64-standalone-desktop')));
 });
 
 test('rejects linux native package targets without distribution', () => {
@@ -522,7 +738,9 @@ test('rejects linux native package targets without distribution', () => {
     release: { artifactPrefix: 'missing-linux-distribution' },
     targets: [
       {
-        id: 'linux-x64-server-deb',
+        id: 'linux-x64-standalone-server-deb',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -544,7 +762,9 @@ test('rejects linux distribution values that do not match the native package for
     release: { artifactPrefix: 'bad-linux-distribution' },
     targets: [
       {
-        id: 'linux-debian-x64-server-rpm',
+        id: 'linux-debian-x64-standalone-server-rpm',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'debian',
@@ -567,7 +787,9 @@ test('rejects linux distribution on generic archive package targets', () => {
     release: { artifactPrefix: 'generic-linux-archive' },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'debian',
@@ -590,7 +812,9 @@ test('rejects linux native packages mixed with generic formats in one target', (
     release: { artifactPrefix: 'mixed-linux-native' },
     targets: [
       {
-        id: 'linux-x64-server',
+        id: 'linux-x64-standalone-server',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'debian',
@@ -613,7 +837,9 @@ test('rejects artifact prefixes that cannot produce canonical artifact names', (
     release: { artifactPrefix: 'bad_prefix' },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -661,7 +887,9 @@ test('validates release changelog configuration and schema fields', async () => 
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -750,7 +978,9 @@ test('renders release notes from sdkwork app manifest notes before git fallback'
     },
     targets: [
       {
-        id: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -771,7 +1001,7 @@ test('renders release notes from sdkwork app manifest notes before git fallback'
   assert.match(notes.content, /^# Demo App 1\.2\.0/u);
   assert.match(notes.content, /Prepared the standard release path\./u);
   assert.match(notes.content, /- Unified package naming/u);
-  assert.match(notes.content, /windows-x64-desktop-msi/u);
+  assert.match(notes.content, /windows-x64-standalone-desktop-msi/u);
 });
 
 test('does not use stale current app manifest notes for a different release version', async () => {
@@ -818,7 +1048,9 @@ test('does not use stale current app manifest notes for a different release vers
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -905,7 +1137,9 @@ test('resolves package version from release tag before default version', async (
     },
     targets: [
       {
-        id: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -958,11 +1192,13 @@ test('renders release notes from configured changelog file', async () => {
     },
     targets: [
       {
-        id: 'web-noarch-web-static',
-        profile: 'web',
+        id: 'web-universal-cloud-browser-web-url',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'browser',
+        profile: 'browser',
         platform: 'web',
-        architecture: 'noarch',
-        formats: ['static'],
+        architecture: 'universal',
+        formats: ['web-url'],
         runner: 'ubuntu-24.04',
         outputGlobs: ['dist/**'],
       },
@@ -974,7 +1210,7 @@ test('renders release notes from configured changelog file', async () => {
   assert.equal(notes.source, 'file');
   assert.match(notes.content, /^# File App v2\.0\.0/u);
   assert.match(notes.content, /# Existing Changelog/u);
-  assert.match(notes.content, /web-noarch-web-static/u);
+  assert.match(notes.content, /web-universal-cloud-browser-web-url/u);
 });
 
 test('rejects unsafe dependency refs and unsupported per-dependency token secret names', () => {
@@ -993,7 +1229,9 @@ test('rejects unsafe dependency refs and unsupported per-dependency token secret
     ],
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1028,7 +1266,9 @@ test('rejects dependency checkout paths that collide with application or framewo
     ],
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1075,7 +1315,9 @@ test('rejects explicit dependency checkout path when it overlaps application sou
     ],
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1104,7 +1346,9 @@ test('plans default dependency checkout as a runner-local sibling repository', (
     ],
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1140,7 +1384,9 @@ test('rejects unsafe lifecycle working directories and non-string step environme
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1163,7 +1409,9 @@ test('summarizes publication and supply chain policy for reusable workflow jobs'
     release: { artifactPrefix: 'policy-demo' },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1212,7 +1460,9 @@ test('creates a GitHub Actions matrix filtered by platform, architecture, profil
     release: { artifactPrefix: 'demo' },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1221,7 +1471,9 @@ test('creates a GitHub Actions matrix filtered by platform, architecture, profil
         outputGlobs: ['dist/*.tar.gz'],
       },
       {
-        id: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -1230,7 +1482,9 @@ test('creates a GitHub Actions matrix filtered by platform, architecture, profil
         outputGlobs: ['dist/*.msi'],
       },
       {
-        id: 'android-arm64-mobile-apk',
+        id: 'android-arm64-standalone-mobile-apk',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'flutter-android',
         profile: 'mobile',
         platform: 'android',
         architecture: 'arm64',
@@ -1251,14 +1505,14 @@ test('creates a GitHub Actions matrix filtered by platform, architecture, profil
   assert.deepEqual(matrix, {
     include: [
       {
-        id: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
         format: 'msi',
         runner: 'windows-2022',
-        packageId: 'windows-x64-desktop-msi',
-        artifactName: 'demo-windows-x64-desktop-msi',
+        packageId: 'windows-x64-standalone-desktop-msi',
+        artifactName: 'demo-windows-x64-standalone-desktop-msi',
         outputGlobs: ['dist/*.msi'],
         outputGlobsText: 'dist/*.msi',
       },
@@ -1273,7 +1527,9 @@ test('uses package id and format for multi-format artifact names', () => {
     release: { artifactPrefix: 'demo' },
     targets: [
       {
-        id: 'linux-x64-desktop',
+        id: 'linux-x64-standalone-desktop',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'linux',
         architecture: 'x64',
@@ -1285,8 +1541,8 @@ test('uses package id and format for multi-format artifact names', () => {
   };
 
   const matrix = createPackageMatrix(config, { format: 'tar.gz' });
-  assert.equal(matrix.include[0].packageId, 'linux-x64-desktop-tar-gz');
-  assert.equal(matrix.include[0].artifactName, 'demo-linux-x64-desktop-tar-gz');
+  assert.equal(matrix.include[0].packageId, 'linux-x64-standalone-desktop-tar-gz');
+  assert.equal(matrix.include[0].artifactName, 'demo-linux-x64-standalone-desktop-tar-gz');
 });
 
 test('supports tablet package targets as first-class profile and platforms', () => {
@@ -1296,7 +1552,9 @@ test('supports tablet package targets as first-class profile and platforms', () 
     release: { artifactPrefix: 'tablet-demo' },
     targets: [
       {
-        id: 'ipados-universal-tablet-ipa',
+        id: 'ipados-universal-standalone-tablet-ipa',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'tablet-ipados',
         profile: 'tablet',
         platform: 'ipados',
         architecture: 'universal',
@@ -1305,7 +1563,9 @@ test('supports tablet package targets as first-class profile and platforms', () 
         outputGlobs: ['build/ipados/ipa/*.ipa'],
       },
       {
-        id: 'android-tablet-arm64-tablet-aab',
+        id: 'android-tablet-arm64-standalone-tablet-aab',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'tablet-android',
         profile: 'tablet',
         platform: 'android-tablet',
         architecture: 'arm64',
@@ -1314,7 +1574,9 @@ test('supports tablet package targets as first-class profile and platforms', () 
         outputGlobs: ['build/app/outputs/bundle/tabletRelease/*.aab'],
       },
       {
-        id: 'windows-tablet-x64-tablet-msix',
+        id: 'windows-tablet-x64-standalone-tablet-msix',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'tablet',
         platform: 'windows-tablet',
         architecture: 'x64',
@@ -1335,7 +1597,7 @@ test('supports tablet package targets as first-class profile and platforms', () 
 
   assert.deepEqual(validateWorkflowConfig(config), []);
   const matrix = createPackageMatrix(config, { profile: 'tablet', platform: 'android-tablet', format: 'aab' });
-  assert.deepEqual(matrix.include.map((item) => item.packageId), ['android-tablet-arm64-tablet-aab']);
+  assert.deepEqual(matrix.include.map((item) => item.packageId), ['android-tablet-arm64-standalone-tablet-aab']);
   const deploymentMatrix = createDeploymentMatrix(config, { packageMatrix: matrix });
   assert.equal(deploymentMatrix.include[0].environment, 'production-tablet');
 });
@@ -1377,7 +1639,9 @@ test('creates dependency plan from generic ref mapping', () => {
     ],
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1420,7 +1684,9 @@ test('loads dependency refs from a JSON file in CLI mode', async () => {
     ],
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1529,13 +1795,13 @@ test('init-app generates standard linux native and windows installer package tar
   const matrix = createPackageMatrix(config, { platform: 'all', architecture: 'all', profile: 'all', format: 'all' });
   const packageIds = matrix.include.map((item) => item.packageId);
 
-  assert.ok(packageIds.includes('linux-debian-x64-server-deb'));
-  assert.ok(packageIds.includes('linux-rhel-x64-server-rpm'));
-  assert.ok(packageIds.includes('linux-x64-server-tar-gz'));
-  assert.ok(packageIds.includes('windows-x64-desktop-msi'));
-  assert.ok(packageIds.includes('windows-x64-desktop-exe'));
-  assert.equal(matrix.include.find((item) => item.packageId === 'linux-debian-x64-server-deb')?.distribution, 'debian');
-  assert.equal(matrix.include.find((item) => item.packageId === 'linux-rhel-x64-server-rpm')?.distribution, 'rhel');
+  assert.ok(packageIds.includes('linux-debian-x64-standalone-server-deb'));
+  assert.ok(packageIds.includes('linux-rhel-x64-standalone-server-rpm'));
+  assert.ok(packageIds.includes('linux-x64-standalone-server-tar-gz'));
+  assert.ok(packageIds.includes('windows-x64-standalone-desktop-msi'));
+  assert.ok(packageIds.includes('windows-x64-standalone-desktop-exe'));
+  assert.equal(matrix.include.find((item) => item.packageId === 'linux-debian-x64-standalone-server-deb')?.distribution, 'debian');
+  assert.equal(matrix.include.find((item) => item.packageId === 'linux-rhel-x64-standalone-server-rpm')?.distribution, 'rhel');
 });
 
 test('init-app generates shell-neutral lifecycle placeholders', async () => {
@@ -1657,7 +1923,9 @@ test('creates normalized toolchain plan with empty defaults', () => {
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1736,8 +2004,10 @@ test('creates deployment matrix from declared environments and selected package 
     release: { artifactPrefix: 'demo' },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
-        packageId: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        packageId: 'linux-x64-standalone-server-tar-gz',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1746,8 +2016,10 @@ test('creates deployment matrix from declared environments and selected package 
         outputGlobs: ['dist/*.tar.gz'],
       },
       {
-        id: 'windows-x64-desktop-msi',
-        packageId: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
+        packageId: 'windows-x64-standalone-desktop-msi',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -1789,8 +2061,8 @@ test('creates deployment matrix from declared environments and selected package 
         url: 'https://demo.sdkwork.com',
         runner: 'ubuntu-24.04',
         lifecycle: 'deploy',
-        targetId: 'linux-x64-server-tar-gz',
-        packageId: 'linux-x64-server-tar-gz',
+        targetId: 'linux-x64-standalone-server-tar-gz',
+        packageId: 'linux-x64-standalone-server-tar-gz',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1807,7 +2079,9 @@ test('validates deployment environment and lifecycle values', () => {
     release: { artifactPrefix: 'bad-deploy' },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1839,8 +2113,10 @@ test('rejects deployments that cannot bind to any package target', () => {
     release: { artifactPrefix: 'bad-deploy-selector' },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
-        packageId: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        packageId: 'linux-x64-standalone-server-tar-gz',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1853,7 +2129,7 @@ test('rejects deployments that cannot bind to any package target', () => {
       {
         id: 'production',
         environment: 'production',
-        targetId: 'windows-x64-desktop-msi',
+        targetId: 'windows-x64-standalone-desktop-msi',
       },
     ],
   };
@@ -1879,8 +2155,10 @@ test('creates lifecycle command plan with target environment', () => {
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
-        packageId: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        packageId: 'linux-x64-standalone-server-tar-gz',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1913,10 +2191,10 @@ test('creates lifecycle command plan with target environment', () => {
           SDKWORK_APP_SOURCE_PATH: 'apps/demo',
           SDKWORK_PACKAGE_ARCHITECTURE: 'x64',
           SDKWORK_PACKAGE_FORMAT: 'tar.gz',
-          SDKWORK_PACKAGE_ID: 'linux-x64-server-tar-gz',
+          SDKWORK_PACKAGE_ID: 'linux-x64-standalone-server-tar-gz',
           SDKWORK_PACKAGE_PLATFORM: 'linux',
           SDKWORK_PACKAGE_PROFILE: 'server',
-          SDKWORK_PACKAGE_TARGET_ID: 'linux-x64-server-tar-gz',
+          SDKWORK_PACKAGE_TARGET_ID: 'linux-x64-standalone-server-tar-gz',
           SDKWORK_PACKAGE_VERSION: '9.9.9',
           SDKWORK_RELEASE_TAG: 'v9.9.9',
         },
@@ -1935,7 +2213,9 @@ test('creates lifecycle command plan with linux distribution environment', () =>
     },
     targets: [
       {
-        id: 'linux-debian-x64-server-deb',
+        id: 'linux-debian-x64-standalone-server-deb',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'debian',
@@ -1968,8 +2248,10 @@ test('creates lifecycle command plan with deployment environment values', () => 
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
-        packageId: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        packageId: 'linux-x64-standalone-server-tar-gz',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -1983,8 +2265,8 @@ test('creates lifecycle command plan with deployment environment values', () => 
   const plan = createLifecyclePlan(config, {
     phase: 'deploy',
     matrixItem: {
-      id: 'linux-x64-server-tar-gz',
-      packageId: 'linux-x64-server-tar-gz',
+      id: 'linux-x64-standalone-server-tar-gz',
+      packageId: 'linux-x64-standalone-server-tar-gz',
       profile: 'server',
       platform: 'linux',
       architecture: 'x64',
@@ -2011,8 +2293,10 @@ test('creates aggregate publish lifecycle plan with aggregate release context', 
     },
     targets: [
       {
-        id: 'windows-x64-desktop-msi',
-        packageId: 'windows-x64-desktop-msi',
+        id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
+        packageId: 'windows-x64-standalone-desktop-msi',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -2059,7 +2343,9 @@ test('passes linux distribution through deployment lifecycle matrix items', () =
     },
     targets: [
       {
-        id: 'linux-debian-x64-server-deb',
+        id: 'linux-debian-x64-standalone-server-deb',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         distribution: 'debian',
@@ -2073,7 +2359,7 @@ test('passes linux distribution through deployment lifecycle matrix items', () =
       {
         id: 'production',
         environment: 'production',
-        packageId: 'linux-debian-x64-server-deb',
+        packageId: 'linux-debian-x64-standalone-server-deb',
       },
     ],
   };
@@ -2100,7 +2386,9 @@ test('uses PowerShell by default for Windows tablet lifecycle targets', () => {
     },
     targets: [
       {
-        id: 'windows-tablet-x64-tablet-msix',
+        id: 'windows-tablet-x64-standalone-tablet-msix',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'tablet',
         platform: 'windows-tablet',
         architecture: 'x64',
@@ -2147,8 +2435,10 @@ test('executes lifecycle plan steps with injected package environment', async ()
     },
     targets: [
       {
-        id: 'linux-x64-server-tar-gz',
-        packageId: 'linux-x64-server-tar-gz',
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        packageId: 'linux-x64-standalone-server-tar-gz',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -2175,7 +2465,7 @@ test('executes lifecycle plan steps with injected package environment', async ()
 
   assert.equal(result.ok, true);
   assert.equal(result.steps.length, 1);
-  assert.equal(await import('node:fs/promises').then((fs) => fs.readFile(outputPath, 'utf8')), 'linux-x64-server-tar-gz');
+  assert.equal(await import('node:fs/promises').then((fs) => fs.readFile(outputPath, 'utf8')), 'linux-x64-standalone-server-tar-gz');
 });
 
 test('repository validation requires SDKWork workspace metadata files', async () => {
@@ -2351,3 +2641,4 @@ test('reusable workflow passes dependency refs JSON through an environment varia
   assert.match(workflow, /--dependency-refs-json "\$\{SDKWORK_DEPENDENCY_REFS_JSON\}"/u);
   assert.doesNotMatch(workflow, /--dependency-refs-json '\$\{\{ inputs\.dependency_refs_json \}\}'/u);
 });
+

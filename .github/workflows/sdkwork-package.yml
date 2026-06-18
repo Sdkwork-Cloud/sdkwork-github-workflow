@@ -18,6 +18,16 @@ on:
         required: false
         type: string
         default: ''
+      deployment_profile:
+        description: Deployment profile filter.
+        required: false
+        type: string
+        default: all
+      runtime_target:
+        description: Runtime target filter.
+        required: false
+        type: string
+        default: all
       platform:
         description: Platform filter.
         required: false
@@ -86,7 +96,7 @@ permissions:
   artifact-metadata: write
 
 concurrency:
-  group: sdkwork-package-${{ github.repository }}-${{ inputs.tag || github.ref_name }}-${{ inputs.platform }}-${{ inputs.architecture }}-${{ inputs.profile }}-${{ inputs.variant }}-${{ inputs.format }}
+  group: sdkwork-package-${{ github.repository }}-${{ inputs.tag || github.ref_name }}-${{ inputs.deployment_profile }}-${{ inputs.runtime_target }}-${{ inputs.platform }}-${{ inputs.architecture }}-${{ inputs.profile }}-${{ inputs.variant }}-${{ inputs.format }}
   cancel-in-progress: false
 
 jobs:
@@ -130,6 +140,8 @@ jobs:
         shell: bash
         env:
           SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_FILTER_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
+          SDKWORK_FILTER_RUNTIME_TARGET: ${{ inputs.runtime_target }}
           SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
           SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
           SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
@@ -141,6 +153,8 @@ jobs:
           set -euo pipefail
           node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs matrix \
             --config "${SDKWORK_CONFIG_PATH}" \
+            --deployment-profile "${SDKWORK_FILTER_DEPLOYMENT_PROFILE}" \
+            --runtime-target "${SDKWORK_FILTER_RUNTIME_TARGET}" \
             --platform "${SDKWORK_FILTER_PLATFORM}" \
             --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
             --profile "${SDKWORK_FILTER_PROFILE}" \
@@ -168,6 +182,8 @@ jobs:
         shell: bash
         env:
           SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_FILTER_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
+          SDKWORK_FILTER_RUNTIME_TARGET: ${{ inputs.runtime_target }}
           SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
           SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
           SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
@@ -177,6 +193,8 @@ jobs:
           set -euo pipefail
           node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs deployments \
             --config "${SDKWORK_CONFIG_PATH}" \
+            --deployment-profile "${SDKWORK_FILTER_DEPLOYMENT_PROFILE}" \
+            --runtime-target "${SDKWORK_FILTER_RUNTIME_TARGET}" \
             --platform "${SDKWORK_FILTER_PLATFORM}" \
             --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
             --profile "${SDKWORK_FILTER_PROFILE}" \
@@ -198,6 +216,8 @@ jobs:
       SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
       SDKWORK_PACKAGE_ID: ${{ matrix.packageId }}
       SDKWORK_PACKAGE_TARGET_ID: ${{ matrix.id }}
+      SDKWORK_DEPLOYMENT_PROFILE: ${{ matrix.deploymentProfile }}
+      SDKWORK_RUNTIME_TARGET: ${{ matrix.runtimeTarget }}
       SDKWORK_PACKAGE_PROFILE: ${{ matrix.profile }}
       SDKWORK_PACKAGE_PLATFORM: ${{ matrix.platform }}
       SDKWORK_PACKAGE_ARCHITECTURE: ${{ matrix.architecture }}
@@ -239,6 +259,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: preflight
           target-id: ${{ matrix.id }}
+          deployment-profile: ${{ matrix.deploymentProfile }}
+          runtime-target: ${{ matrix.runtimeTarget }}
           platform: ${{ matrix.platform }}
           architecture: ${{ matrix.architecture }}
           profile: ${{ matrix.profile }}
@@ -255,6 +277,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: install
           target-id: ${{ matrix.id }}
+          deployment-profile: ${{ matrix.deploymentProfile }}
+          runtime-target: ${{ matrix.runtimeTarget }}
           platform: ${{ matrix.platform }}
           architecture: ${{ matrix.architecture }}
           profile: ${{ matrix.profile }}
@@ -268,6 +292,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: build
           target-id: ${{ matrix.id }}
+          deployment-profile: ${{ matrix.deploymentProfile }}
+          runtime-target: ${{ matrix.runtimeTarget }}
           platform: ${{ matrix.platform }}
           architecture: ${{ matrix.architecture }}
           profile: ${{ matrix.profile }}
@@ -281,6 +307,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: stage
           target-id: ${{ matrix.id }}
+          deployment-profile: ${{ matrix.deploymentProfile }}
+          runtime-target: ${{ matrix.runtimeTarget }}
           platform: ${{ matrix.platform }}
           architecture: ${{ matrix.architecture }}
           profile: ${{ matrix.profile }}
@@ -294,6 +322,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: package
           target-id: ${{ matrix.id }}
+          deployment-profile: ${{ matrix.deploymentProfile }}
+          runtime-target: ${{ matrix.runtimeTarget }}
           platform: ${{ matrix.platform }}
           architecture: ${{ matrix.architecture }}
           profile: ${{ matrix.profile }}
@@ -307,6 +337,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: sign
           target-id: ${{ matrix.id }}
+          deployment-profile: ${{ matrix.deploymentProfile }}
+          runtime-target: ${{ matrix.runtimeTarget }}
           platform: ${{ matrix.platform }}
           architecture: ${{ matrix.architecture }}
           profile: ${{ matrix.profile }}
@@ -320,6 +352,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: sbom
           target-id: ${{ matrix.id }}
+          deployment-profile: ${{ matrix.deploymentProfile }}
+          runtime-target: ${{ matrix.runtimeTarget }}
           platform: ${{ matrix.platform }}
           architecture: ${{ matrix.architecture }}
           profile: ${{ matrix.profile }}
@@ -333,6 +367,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: validate
           target-id: ${{ matrix.id }}
+          deployment-profile: ${{ matrix.deploymentProfile }}
+          runtime-target: ${{ matrix.runtimeTarget }}
           platform: ${{ matrix.platform }}
           architecture: ${{ matrix.architecture }}
           profile: ${{ matrix.profile }}
@@ -361,6 +397,8 @@ jobs:
         shell: bash
         env:
           SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_FILTER_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
+          SDKWORK_FILTER_RUNTIME_TARGET: ${{ inputs.runtime_target }}
           SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
           SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
           SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
@@ -372,6 +410,8 @@ jobs:
           set -euo pipefail
           node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs changelog \
             --config "${SDKWORK_CONFIG_PATH}" \
+            --deployment-profile "${SDKWORK_FILTER_DEPLOYMENT_PROFILE}" \
+            --runtime-target "${SDKWORK_FILTER_RUNTIME_TARGET}" \
             --platform "${SDKWORK_FILTER_PLATFORM}" \
             --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
             --profile "${SDKWORK_FILTER_PROFILE}" \
@@ -448,6 +488,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: publish
           target-id: ${{ fromJson(needs.plan.outputs.matrix).include[0].id }}
+          deployment-profile: ${{ fromJson(needs.plan.outputs.matrix).include[0].deploymentProfile }}
+          runtime-target: ${{ fromJson(needs.plan.outputs.matrix).include[0].runtimeTarget }}
           platform: ${{ fromJson(needs.plan.outputs.matrix).include[0].platform }}
           architecture: ${{ fromJson(needs.plan.outputs.matrix).include[0].architecture }}
           profile: ${{ fromJson(needs.plan.outputs.matrix).include[0].profile }}
@@ -461,6 +503,8 @@ jobs:
         shell: bash
         env:
           SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_FILTER_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
+          SDKWORK_FILTER_RUNTIME_TARGET: ${{ inputs.runtime_target }}
           SDKWORK_FILTER_PLATFORM: ${{ inputs.platform }}
           SDKWORK_FILTER_ARCHITECTURE: ${{ inputs.architecture }}
           SDKWORK_FILTER_PROFILE: ${{ inputs.profile }}
@@ -472,6 +516,8 @@ jobs:
           set -euo pipefail
           node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs changelog \
             --config "${SDKWORK_CONFIG_PATH}" \
+            --deployment-profile "${SDKWORK_FILTER_DEPLOYMENT_PROFILE}" \
+            --runtime-target "${SDKWORK_FILTER_RUNTIME_TARGET}" \
             --platform "${SDKWORK_FILTER_PLATFORM}" \
             --architecture "${SDKWORK_FILTER_ARCHITECTURE}" \
             --profile "${SDKWORK_FILTER_PROFILE}" \
@@ -512,6 +558,8 @@ jobs:
       SDKWORK_PACKAGE_VERSION: ${{ inputs.package_version }}
       SDKWORK_PACKAGE_ID: ${{ matrix.packageId }}
       SDKWORK_PACKAGE_TARGET_ID: ${{ matrix.targetId }}
+      SDKWORK_DEPLOYMENT_PROFILE: ${{ matrix.deploymentProfile }}
+      SDKWORK_RUNTIME_TARGET: ${{ matrix.runtimeTarget }}
       SDKWORK_PACKAGE_PROFILE: ${{ matrix.profile }}
       SDKWORK_PACKAGE_PLATFORM: ${{ matrix.platform }}
       SDKWORK_PACKAGE_ARCHITECTURE: ${{ matrix.architecture }}
@@ -556,6 +604,8 @@ jobs:
           config-path: ${{ inputs.config_path }}
           phase: ${{ matrix.lifecycle }}
           target-id: ${{ matrix.targetId }}
+          deployment-profile: ${{ matrix.deploymentProfile }}
+          runtime-target: ${{ matrix.runtimeTarget }}
           platform: ${{ matrix.platform }}
           architecture: ${{ matrix.architecture }}
           profile: ${{ matrix.profile }}

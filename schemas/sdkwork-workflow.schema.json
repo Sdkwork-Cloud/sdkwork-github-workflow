@@ -214,23 +214,72 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "profile", "platform", "architecture", "formats", "runner", "outputGlobs"],
+        "required": ["id", "deploymentProfile", "runtimeTarget", "profile", "platform", "architecture", "formats", "runner", "outputGlobs"],
         "properties": {
           "id": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]*$",
-            "description": "Canonical target id. Single-format targets use <platform>-<architecture>-<profile>-<format-token>, except linux deb/rpm targets use linux-<distribution>-<architecture>-<profile>-<format-token>. Multi-format targets use <platform>-<architecture>-<profile>."
+            "description": "Canonical target id. Single-format targets use <platform>-<architecture>-<deployment-profile>-<profile>-<format-token>, except linux deb/rpm targets use linux-<distribution>-<architecture>-<deployment-profile>-<profile>-<format-token>. Multi-format targets omit the format token."
           },
           "packageId": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]*$",
             "description": "Optional explicit package id. When present it must match the canonical package id for a single-format target."
           },
+          "deploymentProfile": {
+            "enum": ["standalone", "cloud"],
+            "description": "Application deployment architecture. This is always separate from runtimeTarget and package profile."
+          },
+          "runtimeTarget": {
+            "enum": [
+              "browser",
+              "desktop",
+              "tablet-ipados",
+              "tablet-android",
+              "capacitor-ios",
+              "capacitor-android",
+              "flutter-ios",
+              "flutter-android",
+              "android-native",
+              "ios-native",
+              "harmony-native",
+              "mini-program",
+              "server",
+              "container",
+              "test-runner"
+            ]
+          },
           "profile": {
-            "enum": ["server", "desktop", "mobile", "tablet", "web", "worker", "library"]
+            "enum": ["browser", "desktop", "mobile", "tablet", "mini-program", "server", "container", "worker", "library", "test"]
           },
           "platform": {
-            "enum": ["linux", "windows", "macos", "ios", "ipados", "android", "android-tablet", "windows-tablet", "web", "container"]
+            "enum": [
+              "web",
+              "h5",
+              "h5-weixin",
+              "linux",
+              "windows",
+              "macos",
+              "ios",
+              "ipados",
+              "android",
+              "android-tablet",
+              "windows-tablet",
+              "harmony",
+              "container",
+              "mp-weixin",
+              "mp-alipay",
+              "mp-baidu",
+              "mp-toutiao",
+              "mp-lark",
+              "mp-qq",
+              "mp-kuaishou",
+              "mp-jd",
+              "mp-360",
+              "mp-dingtalk",
+              "mp-ali",
+              "test"
+            ]
           },
           "distribution": {
             "enum": ["debian", "ubuntu", "rhel", "centos", "fedora", "opensuse", "suse"],
@@ -268,9 +317,12 @@
                 "aab",
                 "ipa",
                 "web",
+                "web-url",
                 "static",
+                "mini-program-package",
                 "jar",
-                "war"
+                "war",
+                "other"
               ]
             },
             "uniqueItems": true
@@ -370,11 +422,59 @@
           "runner": {
             "type": "string"
           },
+          "deploymentProfile": {
+            "enum": ["standalone", "cloud"]
+          },
+          "runtimeTarget": {
+            "enum": [
+              "browser",
+              "desktop",
+              "tablet-ipados",
+              "tablet-android",
+              "capacitor-ios",
+              "capacitor-android",
+              "flutter-ios",
+              "flutter-android",
+              "android-native",
+              "ios-native",
+              "harmony-native",
+              "mini-program",
+              "server",
+              "container",
+              "test-runner"
+            ]
+          },
           "profile": {
-            "enum": ["server", "desktop", "mobile", "tablet", "web", "worker", "library"]
+            "enum": ["browser", "desktop", "mobile", "tablet", "mini-program", "server", "container", "worker", "library", "test"]
           },
           "platform": {
-            "enum": ["linux", "windows", "macos", "ios", "ipados", "android", "android-tablet", "windows-tablet", "web", "container"]
+            "enum": [
+              "web",
+              "h5",
+              "h5-weixin",
+              "linux",
+              "windows",
+              "macos",
+              "ios",
+              "ipados",
+              "android",
+              "android-tablet",
+              "windows-tablet",
+              "harmony",
+              "container",
+              "mp-weixin",
+              "mp-alipay",
+              "mp-baidu",
+              "mp-toutiao",
+              "mp-lark",
+              "mp-qq",
+              "mp-kuaishou",
+              "mp-jd",
+              "mp-360",
+              "mp-dingtalk",
+              "mp-ali",
+              "test"
+            ]
           },
           "architecture": {
             "enum": ["x64", "arm64", "armv7", "universal", "wasm32", "noarch"]
@@ -404,9 +504,12 @@
               "aab",
               "ipa",
               "web",
+              "web-url",
               "static",
+              "mini-program-package",
               "jar",
-              "war"
+              "war",
+              "other"
             ]
           },
           "targetId": {

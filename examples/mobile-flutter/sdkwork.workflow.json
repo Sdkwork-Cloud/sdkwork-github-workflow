@@ -49,31 +49,49 @@
   },
   "targets": [
     {
-      "id": "android-arm64-mobile-apk",
+      "id": "android-arm64-standalone-mobile-apk",
       "profile": "mobile",
       "platform": "android",
       "architecture": "arm64",
-      "formats": ["apk"],
+      "formats": [
+        "apk"
+      ],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["build/app/outputs/flutter-apk/*.apk"]
+      "outputGlobs": [
+        "build/app/outputs/flutter-apk/*.apk"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "flutter-android"
     },
     {
-      "id": "android-arm64-mobile-aab",
+      "id": "android-arm64-standalone-mobile-aab",
       "profile": "mobile",
       "platform": "android",
       "architecture": "arm64",
-      "formats": ["aab"],
+      "formats": [
+        "aab"
+      ],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["build/app/outputs/bundle/release/*.aab"]
+      "outputGlobs": [
+        "build/app/outputs/bundle/release/*.aab"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "flutter-android"
     },
     {
-      "id": "ios-universal-mobile-ipa",
+      "id": "ios-universal-standalone-mobile-ipa",
       "profile": "mobile",
       "platform": "ios",
       "architecture": "universal",
-      "formats": ["ipa"],
+      "formats": [
+        "ipa"
+      ],
       "runner": "macos-14",
-      "outputGlobs": ["build/ios/ipa/*.ipa"]
+      "outputGlobs": [
+        "build/ios/ipa/*.ipa"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "flutter-ios"
     }
   ],
   "security": {
@@ -94,7 +112,8 @@
       "platform": "android",
       "format": "aab",
       "runner": "ubuntu-24.04",
-      "lifecycle": "publish"
+      "lifecycle": "publish",
+      "deploymentProfile": "standalone"
     },
     {
       "id": "ios-production",
@@ -103,7 +122,8 @@
       "platform": "ios",
       "format": "ipa",
       "runner": "macos-14",
-      "lifecycle": "publish"
+      "lifecycle": "publish",
+      "deploymentProfile": "standalone"
     }
   ]
 }

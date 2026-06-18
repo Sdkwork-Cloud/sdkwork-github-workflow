@@ -136,116 +136,191 @@
   },
   "targets": [
     {
-      "id": "linux-debian-x64-server-deb",
+      "id": "linux-debian-x64-standalone-server-deb",
       "profile": "server",
       "platform": "linux",
       "distribution": "debian",
       "architecture": "x64",
-      "formats": ["deb"],
+      "formats": [
+        "deb"
+      ],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server"
     },
     {
-      "id": "linux-debian-arm64-server-deb",
+      "id": "linux-debian-arm64-standalone-server-deb",
       "profile": "server",
       "platform": "linux",
       "distribution": "debian",
       "architecture": "arm64",
-      "formats": ["deb"],
+      "formats": [
+        "deb"
+      ],
       "runner": "ubuntu-24.04-arm",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server"
     },
     {
-      "id": "linux-rhel-x64-server-rpm",
+      "id": "linux-rhel-x64-standalone-server-rpm",
       "profile": "server",
       "platform": "linux",
       "distribution": "rhel",
       "architecture": "x64",
-      "formats": ["rpm"],
+      "formats": [
+        "rpm"
+      ],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server"
     },
     {
-      "id": "windows-x64-server-msi",
+      "id": "windows-x64-standalone-server-msi",
       "profile": "server",
       "platform": "windows",
       "architecture": "x64",
-      "formats": ["msi"],
+      "formats": [
+        "msi"
+      ],
       "runner": "windows-2022",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server"
     },
     {
-      "id": "windows-arm64-server-msi",
+      "id": "windows-arm64-standalone-server-msi",
       "profile": "server",
       "platform": "windows",
       "architecture": "arm64",
-      "formats": ["msi"],
+      "formats": [
+        "msi"
+      ],
       "runner": "windows-11-arm",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server"
     },
     {
-      "id": "macos-x64-server-pkg",
+      "id": "macos-x64-standalone-server-pkg",
       "profile": "server",
       "platform": "macos",
       "architecture": "x64",
-      "formats": ["pkg"],
+      "formats": [
+        "pkg"
+      ],
       "runner": "macos-15-intel",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server"
     },
     {
-      "id": "macos-arm64-server-pkg",
+      "id": "macos-arm64-standalone-server-pkg",
       "profile": "server",
       "platform": "macos",
       "architecture": "arm64",
-      "formats": ["pkg"],
+      "formats": [
+        "pkg"
+      ],
       "runner": "macos-14",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server"
     },
     {
-      "id": "linux-debian-x64-desktop-deb",
+      "id": "linux-debian-x64-standalone-desktop-deb",
       "profile": "desktop",
       "platform": "linux",
       "distribution": "debian",
       "architecture": "x64",
-      "formats": ["deb"],
+      "formats": [
+        "deb"
+      ],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "desktop"
     },
     {
-      "id": "linux-x64-desktop-tar-gz",
+      "id": "linux-x64-standalone-desktop-tar-gz",
       "profile": "desktop",
       "platform": "linux",
       "architecture": "x64",
-      "formats": ["tar.gz"],
+      "formats": [
+        "tar.gz"
+      ],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "desktop"
     },
     {
-      "id": "windows-x64-desktop",
+      "id": "windows-x64-standalone-desktop",
       "profile": "desktop",
       "platform": "windows",
       "architecture": "x64",
-      "formats": ["msi", "zip"],
+      "formats": [
+        "msi",
+        "zip"
+      ],
       "runner": "windows-2022",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "desktop"
     },
     {
-      "id": "macos-arm64-desktop",
+      "id": "macos-arm64-standalone-desktop",
       "profile": "desktop",
       "platform": "macos",
       "architecture": "arm64",
-      "formats": ["pkg", "tar.gz"],
+      "formats": [
+        "pkg",
+        "tar.gz"
+      ],
       "runner": "macos-14",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "desktop"
     },
     {
-      "id": "container-x64-server",
-      "profile": "server",
+      "id": "container-x64-cloud-container",
+      "profile": "container",
       "platform": "container",
       "architecture": "x64",
-      "formats": ["oci", "docker"],
+      "formats": [
+        "oci",
+        "docker"
+      ],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["apps/sdkwork-claw-router/dist/install-packages/*"]
+      "outputGlobs": [
+        "apps/sdkwork-claw-router/dist/install-packages/*"
+      ],
+      "deploymentProfile": "cloud",
+      "runtimeTarget": "container"
     }
   ],
   "security": {
@@ -268,7 +343,9 @@
       "format": "deb",
       "runner": "ubuntu-24.04",
       "url": "https://api.sdkwork.com/apps/sdkwork-claw-router",
-      "lifecycle": "deploy"
+      "lifecycle": "deploy",
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server"
     },
     {
       "id": "production-desktop-windows",
@@ -277,7 +354,9 @@
       "platform": "windows",
       "format": "msi",
       "runner": "windows-2022",
-      "lifecycle": "publish"
+      "lifecycle": "publish",
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "desktop"
     }
   ]
 }
