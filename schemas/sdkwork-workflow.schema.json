@@ -133,6 +133,48 @@
         }
       }
     },
+    "verificationDependencies": {
+      "type": "array",
+      "description": "SDKWork repositories checked out only for CI or boundary verification. These are not runtime, packaging, or API ownership dependencies.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "repository"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "refInput": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tokenSecret": {
+            "type": "string",
+            "const": "SDKWORK_RELEASE_TOKEN"
+          },
+          "submodules": {
+            "enum": [false, true, "false", "true", "recursive"]
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
     "toolchains": {
       "type": "object",
       "additionalProperties": false,

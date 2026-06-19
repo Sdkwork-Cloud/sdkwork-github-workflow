@@ -27,22 +27,18 @@
     "grantMode": "current",
     "platform": "WEB",
     "appId": null,
-    "tenantId": "20001",
     "organizationId": null
   },
   "runtime": {
     "family": "web",
     "framework": "node-service",
-    "runtimes": [
-      "WEB",
-      "BROWSER"
+    "supportedDeploymentProfiles": [
+      "cloud",
+      "standalone"
     ],
-    "deliveryModes": [
-      "WEB_URL",
-      "DIRECT_DOWNLOAD"
-    ],
+    "defaultDeploymentProfile": "cloud",
     "defaultPlatform": "WEB",
-    "defaultArchitecture": "x64"
+    "defaultArchitecture": "universal"
   },
   "media": {
     "icons": {
@@ -131,7 +127,7 @@
     "installPlatforms": [
       "WEB"
     ],
-    "defaultPackageId": "web-production",
+    "defaultPackageId": "web-universal-cloud-browser-zip",
     "storeUrl": "https://sdkwork.com/apps/sdkwork-github-workflow",
     "stores": [],
     "config": {
@@ -159,17 +155,20 @@
   },
   "artifacts": {
     "installConfig": {
-      "defaultPackageId": "web-production",
+      "defaultPackageId": "web-universal-cloud-browser-zip",
       "installCommand": "sdkwork install sdkwork-github-workflow",
       "launchCommand": "sdkwork open sdkwork-github-workflow",
       "uninstallCommand": "sdkwork uninstall sdkwork-github-workflow",
       "packages": [
         {
-          "id": "web-production",
+          "id": "web-universal-cloud-browser-zip",
           "name": "SDKWork Github Workflow Web Bundle",
-          "sourceType": "WEB_URL",
+          "sourceType": "BINARY_URL",
           "packageFormat": "ZIP",
           "platform": "WEB",
+          "architecture": "universal",
+          "deploymentProfile": "cloud",
+          "runtimeTarget": "browser",
           "url": "https://cdn.sdkwork.com/apps/sdkwork-github-workflow/STABLE/0.1.0/web.zip",
           "enabled": true,
           "metadata": {},
@@ -177,7 +176,7 @@
           "checksum": "38a2adc538a2adc538a2adc538a2adc538a2adc538a2adc538a2adc538a2adc5"
         },
         {
-          "id": "desktop-windows",
+          "id": "windows-x64-standalone-desktop-zip",
           "name": "SDKWork Github Workflow Windows Bundle",
           "sourceType": "BINARY_URL",
           "packageFormat": "ZIP",
@@ -186,11 +185,13 @@
           "enabled": true,
           "metadata": {},
           "architecture": "x64",
+          "deploymentProfile": "standalone",
+          "runtimeTarget": "desktop",
           "checksumAlgorithm": "SHA-256",
           "checksum": "11709f3f11709f3f11709f3f11709f3f11709f3f11709f3f11709f3f11709f3f"
         },
         {
-          "id": "desktop-macos",
+          "id": "macos-universal-standalone-desktop-dmg",
           "name": "SDKWork Github Workflow macOS Bundle",
           "sourceType": "BINARY_URL",
           "packageFormat": "DMG",
@@ -199,11 +200,13 @@
           "enabled": true,
           "metadata": {},
           "architecture": "universal",
+          "deploymentProfile": "standalone",
+          "runtimeTarget": "desktop",
           "checksumAlgorithm": "SHA-256",
           "checksum": "d77e972fd77e972fd77e972fd77e972fd77e972fd77e972fd77e972fd77e972f"
         },
         {
-          "id": "desktop-linux",
+          "id": "linux-x64-standalone-desktop-appimage",
           "name": "SDKWork Github Workflow Linux Bundle",
           "sourceType": "BINARY_URL",
           "packageFormat": "APPIMAGE",
@@ -216,6 +219,8 @@
             }
           },
           "architecture": "x64",
+          "deploymentProfile": "standalone",
+          "runtimeTarget": "desktop",
           "checksumAlgorithm": "SHA-256",
           "checksum": "d7744cb0d7744cb0d7744cb0d7744cb0d7744cb0d7744cb0d7744cb0d7744cb0"
         }
@@ -247,10 +252,10 @@
           "Download package matrix normalized"
         ],
         "packageIds": [
-          "web-production",
-          "desktop-windows",
-          "desktop-macos",
-          "desktop-linux"
+          "web-universal-cloud-browser-zip",
+          "windows-x64-standalone-desktop-zip",
+          "macos-universal-standalone-desktop-dmg",
+          "linux-x64-standalone-desktop-appimage"
         ],
         "publishedAt": "2026-05-07T00:00:00Z",
         "current": true,

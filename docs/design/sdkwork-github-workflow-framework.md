@@ -34,7 +34,7 @@ This follows the current GitHub Actions reusable workflow model and avoids vendo
 - `dependencies`: repository, ref input, checkout path, token secret, submodule mode.
 - `toolchains`: Node, pnpm, Python, Java, Go, Rust, Flutter, Android, Xcode, WiX.
 - `lifecycle`: preflight, install, build, stage, package, validate, publish command phases.
-- `targets`: profile, platform, architecture, formats, runner, output globs.
+- `targets`: deployment profile, runtime target, package profile, platform, architecture, formats, runner, output globs.
 - `security`: OIDC, attestations, SBOM, signing flags.
 - `publish`: workflow artifact and GitHub Release settings.
 
@@ -70,18 +70,49 @@ Composite actions keep the main workflow readable and reusable.
 
 ## Target Model
 
-The framework supports these profiles:
+The framework keeps deployment architecture, runtime location, and package taxonomy separate.
+
+Deployment profiles are:
+
+- `standalone`
+- `cloud`
+
+Runtime targets are:
+
+- `browser`
+- `desktop`
+- `tablet-ipados`
+- `tablet-android`
+- `capacitor-ios`
+- `capacitor-android`
+- `flutter-ios`
+- `flutter-android`
+- `android-native`
+- `ios-native`
+- `harmony-native`
+- `mini-program`
+- `server`
+- `container`
+- `test-runner`
+
+Package profiles are:
 
 - `server`
 - `desktop`
 - `mobile`
 - `tablet`
-- `web`
+- `browser`
+- `mini-program`
+- `container`
 - `worker`
 - `library`
+- `test`
 
 The framework supports these platforms:
 
+- `web`
+- `h5`
+- `h5-weixin`
 - `linux`
 - `windows`
 - `macos`
@@ -90,8 +121,20 @@ The framework supports these platforms:
 - `ios`
 - `ipados`
 - `windows-tablet`
-- `web`
+- `harmony`
 - `container`
+- `mp-weixin`
+- `mp-alipay`
+- `mp-baidu`
+- `mp-toutiao`
+- `mp-lark`
+- `mp-qq`
+- `mp-kuaishou`
+- `mp-jd`
+- `mp-360`
+- `mp-dingtalk`
+- `mp-ali`
+- `test`
 
 The framework supports these architectures:
 
@@ -111,14 +154,16 @@ The framework supports these package formats:
 - Container: `docker`, `oci`, `helm`
 - Mobile: `apk`, `aab`, `ipa`
 - Tablet: `apk`, `aab`, `ipa`, `msix`
-- Web/JVM: `web`, `static`, `jar`, `war`
+- Browser/mini-program/JVM: `web`, `web-url`, `static`, `mini-program-package`, `jar`, `war`
+
+Package ids use `<platform>-<architecture>-<deployment-profile>-<profile>-<format-token>`. Linux native `deb` and `rpm` packages insert the distribution segment after `linux`. Docker-compatible artifacts use `runtimeTarget = "container"` and a container format such as `oci` or `docker`; `docker` is not a deployment profile, runtime target, or package profile.
 
 ## Migration From sdkwork-claw-router
 
 The original workflow contains these framework-level concepts:
 
 - Git tag and release triggers for standard package/deploy entrypoints.
-- `workflow_dispatch` inputs for tag/version/platform/architecture/deployment mode.
+- `workflow_dispatch` inputs for tag/version/deployment profile/runtime target/platform/architecture/profile/format.
 - Matrix planner.
 - Dependency repository checkout.
 - Node/pnpm/Python/Rust/WiX setup.

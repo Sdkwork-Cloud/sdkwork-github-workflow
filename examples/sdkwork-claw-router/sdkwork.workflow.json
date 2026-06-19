@@ -348,7 +348,7 @@
       "runtimeTarget": "server"
     },
     {
-      "id": "production-desktop-windows",
+      "id": "production-windows-desktop",
       "environment": "production-desktop",
       "profile": "desktop",
       "platform": "windows",

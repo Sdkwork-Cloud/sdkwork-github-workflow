@@ -13,9 +13,10 @@ This repository implements the SDKWork standard in `../sdkwork-specs/GITHUB_WORK
 ## Design Goals
 
 - One standard packaging contract for all SDKWork applications.
-- Support server, desktop, mobile, tablet, web, worker, and library profiles.
-- Support Linux, Windows, macOS, Android, Android tablet, iOS, iPadOS, Windows tablet, web, and container targets.
-- Support common package formats: `zip`, `tar.gz`, `deb`, `rpm`, `pkg`, `dmg`, `msi`, `msix`, `exe`, `appimage`, `snap`, `flatpak`, `docker`, `oci`, `helm`, `apk`, `aab`, `ipa`, `web`, `static`, `jar`, and `war`.
+- Support browser, server, desktop, mobile, tablet, mini-program, container, worker, library, and test package profiles.
+- Support standalone/cloud deployment profiles separately from browser, desktop, server, container, mobile, tablet, mini program, and test runtime targets.
+- Support Linux, Windows, macOS, Android, Android tablet, iOS, iPadOS, Windows tablet, web, H5, Harmony, mini program, test, and container targets.
+- Support common package formats: `zip`, `tar.gz`, `deb`, `rpm`, `pkg`, `dmg`, `msi`, `msix`, `exe`, `appimage`, `snap`, `flatpak`, `docker`, `oci`, `helm`, `apk`, `aab`, `ipa`, `web`, `web-url`, `static`, `mini-program-package`, `jar`, `war`, and `other`.
 - Support declared dependency repositories with ref inputs.
 - Use GitHub Actions reusable workflows and composite actions instead of copied YAML.
 - Align with current CI/CD standards: least-privilege permissions, OIDC-ready publishing, artifact attestations, deterministic matrix planning, and release artifact validation hooks.
@@ -60,8 +61,8 @@ For `--profiles server,desktop`, the starter config includes these package targe
 
 | Profile | Package ids |
 | --- | --- |
-| server | `linux-debian-x64-server-deb`, `linux-rhel-x64-server-rpm`, `linux-x64-server-tar-gz` |
-| desktop | `windows-x64-desktop-msi`, `windows-x64-desktop-exe`, `macos-arm64-desktop-dmg` |
+| server | `linux-debian-x64-standalone-server-deb`, `linux-rhel-x64-standalone-server-rpm`, `linux-x64-standalone-server-tar-gz` |
+| desktop | `windows-x64-standalone-desktop-msi`, `windows-x64-standalone-desktop-exe`, `macos-arm64-standalone-desktop-dmg` |
 
 Add `sdkwork.workflow.json` to the application repository:
 
@@ -93,7 +94,9 @@ Add `sdkwork.workflow.json` to the application repository:
   },
   "targets": [
     {
-      "id": "linux-x64-server-tar-gz",
+      "id": "linux-x64-standalone-server-tar-gz",
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server",
       "profile": "server",
       "platform": "linux",
       "architecture": "x64",
@@ -108,18 +111,18 @@ Add `sdkwork.workflow.json` to the application repository:
 Package matrix items use one canonical package id:
 
 ```text
-<platform>-<architecture>-<profile>-<format-token>
+<platform>-<architecture>-<deployment-profile>-<profile>-<format-token>
 ```
 
 Linux native `deb` and `rpm` packages include the distribution family because dependency metadata, repository channels, signing, and install validation differ by family:
 
 ```text
-linux-<distribution>-<architecture>-<profile>-<format-token>
+linux-<distribution>-<architecture>-<deployment-profile>-<profile>-<format-token>
 ```
 
 Use `distribution: "debian"` or `distribution: "ubuntu"` for `deb`, and `distribution: "rhel"`, `"centos"`, `"fedora"`, `"opensuse"`, or `"suse"` for `rpm`. Generic Linux archives such as `tar.gz` do not include `distribution`.
 
-When one platform produces installer formats with different file globs, declare separate single-format targets. For example, prefer `windows-x64-desktop-msi` and `windows-x64-desktop-exe` as separate targets over one multi-format Windows target when the `.msi` and `.exe` files are collected by different globs.
+When one platform produces installer formats with different file globs, declare separate single-format targets. For example, prefer `windows-x64-standalone-desktop-msi` and `windows-x64-standalone-desktop-exe` as separate targets over one multi-format Windows target when the `.msi` and `.exe` files are collected by different globs.
 
 `format-token` is the package format normalized to lowercase kebab-case, so `tar.gz` becomes `tar-gz`. GitHub artifact names prepend `release.artifactPrefix`:
 
@@ -129,21 +132,22 @@ When one platform produces installer formats with different file globs, declare 
 
 Examples:
 
-| Profile | Platform | Distribution | Architecture | Format | Package id | Artifact name with `artifactPrefix: my-app` |
-| --- | --- | --- | --- | --- | --- | --- |
-| server | linux | debian | x64 | deb | `linux-debian-x64-server-deb` | `my-app-linux-debian-x64-server-deb` |
-| server | linux | ubuntu | arm64 | deb | `linux-ubuntu-arm64-server-deb` | `my-app-linux-ubuntu-arm64-server-deb` |
-| server | linux | rhel | x64 | rpm | `linux-rhel-x64-server-rpm` | `my-app-linux-rhel-x64-server-rpm` |
-| desktop | linux | fedora | x64 | rpm | `linux-fedora-x64-desktop-rpm` | `my-app-linux-fedora-x64-desktop-rpm` |
-| server | linux | omitted | x64 | tar.gz | `linux-x64-server-tar-gz` | `my-app-linux-x64-server-tar-gz` |
-| server | container | omitted | arm64 | oci | `container-arm64-server-oci` | `my-app-container-arm64-server-oci` |
-| desktop | windows | omitted | x64 | msi | `windows-x64-desktop-msi` | `my-app-windows-x64-desktop-msi` |
-| desktop | windows | omitted | x64 | exe | `windows-x64-desktop-exe` | `my-app-windows-x64-desktop-exe` |
-| desktop | macos | omitted | arm64 | dmg | `macos-arm64-desktop-dmg` | `my-app-macos-arm64-desktop-dmg` |
-| mobile | android | omitted | arm64 | aab | `android-arm64-mobile-aab` | `my-app-android-arm64-mobile-aab` |
-| mobile | ios | omitted | universal | ipa | `ios-universal-mobile-ipa` | `my-app-ios-universal-mobile-ipa` |
-| tablet | ipados | omitted | universal | ipa | `ipados-universal-tablet-ipa` | `my-app-ipados-universal-tablet-ipa` |
-| tablet | windows-tablet | omitted | x64 | msix | `windows-tablet-x64-tablet-msix` | `my-app-windows-tablet-x64-tablet-msix` |
+| Profile | Platform | Deployment profile | Runtime target | Distribution | Architecture | Format | Package id | Artifact name with `artifactPrefix: my-app` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| server | linux | standalone | server | debian | x64 | deb | `linux-debian-x64-standalone-server-deb` | `my-app-linux-debian-x64-standalone-server-deb` |
+| server | linux | standalone | server | ubuntu | arm64 | deb | `linux-ubuntu-arm64-standalone-server-deb` | `my-app-linux-ubuntu-arm64-standalone-server-deb` |
+| server | linux | standalone | server | rhel | x64 | rpm | `linux-rhel-x64-standalone-server-rpm` | `my-app-linux-rhel-x64-standalone-server-rpm` |
+| desktop | linux | standalone | desktop | fedora | x64 | rpm | `linux-fedora-x64-standalone-desktop-rpm` | `my-app-linux-fedora-x64-standalone-desktop-rpm` |
+| server | linux | standalone | server | omitted | x64 | tar.gz | `linux-x64-standalone-server-tar-gz` | `my-app-linux-x64-standalone-server-tar-gz` |
+| container | container | cloud | container | omitted | arm64 | oci | `container-arm64-cloud-container-oci` | `my-app-container-arm64-cloud-container-oci` |
+| desktop | windows | standalone | desktop | omitted | x64 | msi | `windows-x64-standalone-desktop-msi` | `my-app-windows-x64-standalone-desktop-msi` |
+| desktop | windows | standalone | desktop | omitted | x64 | exe | `windows-x64-standalone-desktop-exe` | `my-app-windows-x64-standalone-desktop-exe` |
+| desktop | macos | standalone | desktop | omitted | arm64 | dmg | `macos-arm64-standalone-desktop-dmg` | `my-app-macos-arm64-standalone-desktop-dmg` |
+| browser | web | cloud | browser | omitted | universal | web-url | `web-universal-cloud-browser-web-url` | `my-app-web-universal-cloud-browser-web-url` |
+| mobile | android | standalone | flutter-android | omitted | arm64 | aab | `android-arm64-standalone-mobile-aab` | `my-app-android-arm64-standalone-mobile-aab` |
+| mobile | ios | standalone | flutter-ios | omitted | universal | ipa | `ios-universal-standalone-mobile-ipa` | `my-app-ios-universal-standalone-mobile-ipa` |
+| tablet | ipados | standalone | tablet-ipados | omitted | universal | ipa | `ipados-universal-standalone-tablet-ipa` | `my-app-ipados-universal-standalone-tablet-ipa` |
+| mini-program | mp-weixin | cloud | mini-program | omitted | universal | mini-program-package | `mp-weixin-universal-cloud-mini-program-mini-program-package` | `my-app-mp-weixin-universal-cloud-mini-program-mini-program-package` |
 
 ## Release Changelog
 
@@ -213,6 +217,12 @@ on:
       package_version:
         required: false
         default: 0.1.0
+      deployment_profile:
+        required: true
+        default: all
+      runtime_target:
+        required: true
+        default: all
       platform:
         required: true
         default: all
@@ -233,6 +243,8 @@ jobs:
       config_path: sdkwork.workflow.json
       tag: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
       package_version: ${{ github.event.inputs.package_version || github.event.release.tag_name || github.ref_name }}
+      deployment_profile: ${{ github.event.inputs.deployment_profile || 'all' }}
+      runtime_target: ${{ github.event.inputs.runtime_target || 'all' }}
       platform: ${{ github.event.inputs.platform || 'all' }}
       architecture: ${{ github.event.inputs.architecture || 'all' }}
       profile: ${{ github.event.inputs.profile || 'all' }}
@@ -246,7 +258,7 @@ The standard application workflow supports three entrypoints:
 
 - `push` tag: package the pushed release tag.
 - `release.published`: package and run configured deployments by default.
-- `workflow_dispatch`: manually package or deploy a selected platform/profile/format.
+- `workflow_dispatch`: manually package or deploy a selected deployment profile, runtime target, platform, package profile, architecture, variant, or format.
 
 ## Lifecycle Contract
 
@@ -275,6 +287,8 @@ Every lifecycle command receives standard environment variables:
 - `SDKWORK_PACKAGE_VERSION`
 - `SDKWORK_PACKAGE_TARGET_ID`
 - `SDKWORK_PACKAGE_ID`
+- `SDKWORK_DEPLOYMENT_PROFILE`
+- `SDKWORK_RUNTIME_TARGET`
 - `SDKWORK_PACKAGE_PROFILE`
 - `SDKWORK_PACKAGE_PLATFORM`
 - `SDKWORK_PACKAGE_ARCHITECTURE`
@@ -296,10 +310,12 @@ Deployment targets are declared in `sdkwork.workflow.json`:
     {
       "id": "production-server",
       "environment": "production",
+      "deploymentProfile": "standalone",
+      "runtimeTarget": "server",
       "profile": "server",
       "platform": "linux",
       "format": "deb",
-      "packageId": "linux-debian-x64-server-deb",
+      "packageId": "linux-debian-x64-standalone-server-deb",
       "runner": "ubuntu-24.04",
       "url": "https://api.sdkwork.com/apps/my-app",
       "lifecycle": "deploy"

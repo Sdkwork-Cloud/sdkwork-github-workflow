@@ -18,6 +18,37 @@ on:
         description: Package version used in artifact names and manifests.
         required: true
         default: 0.1.0
+      deployment_profile:
+        description: Deployment profile filter.
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - standalone
+          - cloud
+      runtime_target:
+        description: Runtime target filter.
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - browser
+          - desktop
+          - tablet-ipados
+          - tablet-android
+          - capacitor-ios
+          - capacitor-android
+          - flutter-ios
+          - flutter-android
+          - android-native
+          - ios-native
+          - harmony-native
+          - mini-program
+          - server
+          - container
+          - test-runner
       platform:
         description: Platform filter.
         required: true
@@ -34,7 +65,11 @@ on:
           - ipados
           - windows-tablet
           - web
+          - h5
+          - h5-weixin
+          - harmony
           - container
+          - mp-weixin
       architecture:
         description: Architecture filter.
         required: true
@@ -49,19 +84,22 @@ on:
           - wasm32
           - noarch
       profile:
-        description: Runtime profile filter.
+        description: Package profile filter.
         required: true
         default: all
         type: choice
         options:
           - all
+          - browser
           - server
           - desktop
           - mobile
           - tablet
-          - web
+          - mini-program
+          - container
           - worker
           - library
+          - test
       variant:
         description: Package variant filter.
         required: true
@@ -90,6 +128,8 @@ jobs:
       config_path: sdkwork.workflow.json
       tag: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
       package_version: ${{ github.event.inputs.package_version || github.event.release.tag_name || github.ref_name }}
+      deployment_profile: ${{ github.event.inputs.deployment_profile || 'all' }}
+      runtime_target: ${{ github.event.inputs.runtime_target || 'all' }}
       platform: ${{ github.event.inputs.platform || 'all' }}
       architecture: ${{ github.event.inputs.architecture || 'all' }}
       profile: ${{ github.event.inputs.profile || 'all' }}

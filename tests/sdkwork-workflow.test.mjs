@@ -611,7 +611,7 @@ test('uses canonical variant package ids and lifecycle environment for deploymen
 
   assert.deepEqual(validateWorkflowConfig(config), []);
 
-  const matrix = createPackageMatrix(config, { platform: 'container', architecture: 'x64', profile: 'server', format: 'tar.gz' });
+  const matrix = createPackageMatrix(config, { platform: 'container', architecture: 'x64', profile: 'container', format: 'tar.gz' });
 
   assert.deepEqual(
     matrix.include.map((item) => [item.packageId, item.artifactName, item.variant]),
@@ -1365,6 +1365,69 @@ test('plans default dependency checkout as a runner-local sibling repository', (
   assert.equal(plan.include[0].path, '../sdkwork-core');
 });
 
+test('plans verification dependencies without treating them as runtime release dependencies', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'boundary-app', repository: 'Org/boundary-app' },
+    release: { artifactPrefix: 'boundary-app' },
+    dependencies: [
+      {
+        id: 'sdkwork-appbase',
+        repository: 'Sdkwork-Cloud/sdkwork-appbase',
+        ref: 'main',
+      },
+    ],
+    verificationDependencies: [
+      {
+        id: 'sdkwork-im',
+        repository: 'Sdkwork-Cloud/sdkwork-im',
+        refInput: 'SDKWORK_IM_REF',
+        tokenSecret: 'SDKWORK_RELEASE_TOKEN',
+        purpose: 'boundary contract tests',
+      },
+    ],
+    targets: [
+      {
+        id: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+    ],
+  };
+
+  assert.deepEqual(validateWorkflowConfig(config), []);
+  assert.deepEqual(createDependencyPlan(config, { SDKWORK_IM_REF: 'boundary-ref' }), {
+    include: [
+      {
+        id: 'sdkwork-appbase',
+        repository: 'Sdkwork-Cloud/sdkwork-appbase',
+        ref: 'main',
+        path: '../sdkwork-appbase',
+        tokenSecret: null,
+        submodules: false,
+        dependencyType: 'runtime',
+        purpose: '',
+      },
+      {
+        id: 'sdkwork-im',
+        repository: 'Sdkwork-Cloud/sdkwork-im',
+        ref: 'boundary-ref',
+        path: '../sdkwork-im',
+        tokenSecret: 'SDKWORK_RELEASE_TOKEN',
+        submodules: false,
+        dependencyType: 'verification',
+        purpose: 'boundary contract tests',
+      },
+    ],
+  });
+});
+
 test('rejects unsafe lifecycle working directories and non-string step environment values', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
@@ -1506,6 +1569,8 @@ test('creates a GitHub Actions matrix filtered by platform, architecture, profil
     include: [
       {
         id: 'windows-x64-standalone-desktop-msi',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -1661,6 +1726,8 @@ test('creates dependency plan from generic ref mapping', () => {
         path: 'apps/sdkwork-core',
         tokenSecret: null,
         submodules: 'recursive',
+        dependencyType: 'runtime',
+        purpose: '',
       },
     ],
   });
@@ -2063,6 +2130,8 @@ test('creates deployment matrix from declared environments and selected package 
         lifecycle: 'deploy',
         targetId: 'linux-x64-standalone-server-tar-gz',
         packageId: 'linux-x64-standalone-server-tar-gz',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
         architecture: 'x64',
@@ -2189,6 +2258,8 @@ test('creates lifecycle command plan with target environment', () => {
           SDKWORK_APP_ID: 'demo',
           SDKWORK_APP_REPOSITORY: 'Org/demo',
           SDKWORK_APP_SOURCE_PATH: 'apps/demo',
+          SDKWORK_DEPLOYMENT_PROFILE: 'standalone',
+          SDKWORK_RUNTIME_TARGET: 'server',
           SDKWORK_PACKAGE_ARCHITECTURE: 'x64',
           SDKWORK_PACKAGE_FORMAT: 'tar.gz',
           SDKWORK_PACKAGE_ID: 'linux-x64-standalone-server-tar-gz',
@@ -2479,6 +2550,59 @@ test('repository validation requires SDKWork workspace metadata files', async ()
   assert.ok(REQUIRED_FILES.includes('.sdkwork/plugins/README.md'));
 });
 
+test('repository validation rejects legacy app manifest runtime and package taxonomy', async () => {
+  const { validateAppManifestStandard } = await import('../scripts/validate-repository.mjs');
+  const issues = [];
+
+  validateAppManifestStandard({
+    runtime: {
+      family: 'web',
+      framework: 'node-service',
+    },
+    backend: {
+      tenantId: '20001',
+    },
+    publish: {
+      defaultPackageId: 'web-production',
+    },
+    artifacts: {
+      installConfig: {
+        defaultPackageId: 'web-production',
+        packages: [
+          {
+            id: 'web-production',
+            packageFormat: 'ZIP',
+            platform: 'WEB',
+          },
+          {
+            id: 'desktop-windows',
+            deploymentProfile: 'desktop',
+            runtimeTarget: 'windows',
+            packageFormat: 'ZIP',
+            platform: 'DESKTOP_WINDOWS',
+          },
+        ],
+      },
+    },
+    release: {
+      notes: [
+        {
+          packageIds: ['web-production', 'desktop-windows', 'missing-package'],
+        },
+      ],
+    },
+  }, issues);
+
+  assert.ok(issues.some((issue) => issue.includes('backend.tenantId must not be present')));
+  assert.ok(issues.some((issue) => issue.includes('runtime.supportedDeploymentProfiles must be a non-empty array')));
+  assert.ok(issues.some((issue) => issue.includes('publish.defaultPackageId must use a canonical package id')));
+  assert.ok(issues.some((issue) => issue.includes('artifacts.installConfig.packages[0].deploymentProfile is required')));
+  assert.ok(issues.some((issue) => issue.includes('artifacts.installConfig.packages[0].runtimeTarget is required')));
+  assert.ok(issues.some((issue) => issue.includes('artifacts.installConfig.packages[1].deploymentProfile must be standalone or cloud')));
+  assert.ok(issues.some((issue) => issue.includes('artifacts.installConfig.packages[1].runtimeTarget must be a canonical runtime target')));
+  assert.ok(issues.some((issue) => issue.includes('release.notes[0].packageIds[2] references unknown package id missing-package')));
+});
+
 test('repository validation rejects shell-quoted dependency refs JSON expressions', async () => {
   const root = path.join(tempRoot, 'repository-validation-yaml');
   await rm(root, { recursive: true, force: true });
@@ -2611,7 +2735,28 @@ test('reusable workflow gates publication policies and passes deployment context
   assert.match(workflow, /deploy-environment: \$\{\{ matrix\.environment \}\}/u);
   assert.match(workflow, /deploy-url: \$\{\{ matrix\.url \}\}/u);
   assert.match(workflow, /deploy-lifecycle: \$\{\{ matrix\.lifecycle \}\}/u);
+  assert.match(workflow, /deployment_profile:/u);
+  assert.match(workflow, /runtime_target:/u);
+  assert.match(workflow, /--deployment-profile "\$\{SDKWORK_FILTER_DEPLOYMENT_PROFILE\}"/u);
+  assert.match(workflow, /--runtime-target "\$\{SDKWORK_FILTER_RUNTIME_TARGET\}"/u);
+  assert.match(workflow, /SDKWORK_DEPLOYMENT_PROFILE: \$\{\{ matrix\.deploymentProfile \}\}/u);
+  assert.match(workflow, /SDKWORK_RUNTIME_TARGET: \$\{\{ matrix\.runtimeTarget \}\}/u);
+  assert.match(workflow, /deployment-profile: \$\{\{ matrix\.deploymentProfile \}\}/u);
+  assert.match(workflow, /runtime-target: \$\{\{ matrix\.runtimeTarget \}\}/u);
   assert.match(workflow, /SDKWORK_PACKAGE_VARIANT: \$\{\{ matrix\.variant \}\}/u);
+});
+
+test('run-lifecycle action passes deployment profile and runtime target filters through environment variables', async () => {
+  const action = await readFile('actions/run-lifecycle/action.yml', 'utf8');
+
+  assert.match(action, /deployment-profile:/u);
+  assert.match(action, /runtime-target:/u);
+  assert.match(action, /SDKWORK_TARGET_DEPLOYMENT_PROFILE: \$\{\{ inputs\.deployment-profile \}\}/u);
+  assert.match(action, /SDKWORK_TARGET_RUNTIME_TARGET: \$\{\{ inputs\.runtime-target \}\}/u);
+  assert.match(action, /--deployment-profile "\$\{SDKWORK_TARGET_DEPLOYMENT_PROFILE\}"/u);
+  assert.match(action, /--runtime-target "\$\{SDKWORK_TARGET_RUNTIME_TARGET\}"/u);
+  assert.doesNotMatch(action, /--deployment-profile "\$\{\{ inputs\.deployment-profile \}\}"/u);
+  assert.doesNotMatch(action, /--runtime-target "\$\{\{ inputs\.runtime-target \}\}"/u);
 });
 
 test('reusable workflow supports aggregate GitHub Release publication', async () => {
@@ -2641,4 +2786,3 @@ test('reusable workflow passes dependency refs JSON through an environment varia
   assert.match(workflow, /--dependency-refs-json "\$\{SDKWORK_DEPENDENCY_REFS_JSON\}"/u);
   assert.doesNotMatch(workflow, /--dependency-refs-json '\$\{\{ inputs\.dependency_refs_json \}\}'/u);
 });
-

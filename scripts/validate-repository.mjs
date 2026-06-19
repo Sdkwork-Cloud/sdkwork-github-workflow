@@ -8,6 +8,8 @@ import {
   createPackageMatrix,
   initApplicationWorkflow,
   loadWorkflowConfig,
+  SUPPORTED_DEPLOYMENT_PROFILES,
+  SUPPORTED_RUNTIME_TARGETS,
   validateWorkflowConfig,
 } from './sdkwork-workflow.mjs';
 import { mkdir, rm } from 'node:fs/promises';
@@ -28,6 +30,7 @@ const REQUIRED_FILES = Object.freeze([
   'schemas/sdkwork-workflow.schema.json',
   'scripts/sdkwork-workflow.mjs',
   'templates/app-package.workflow.yml',
+  'sdkwork.app.config.json',
   'examples/sdkwork-claw-router/sdkwork.workflow.json',
   'examples/mobile-flutter/sdkwork.workflow.json',
   'examples/tablet-cross-platform/sdkwork.workflow.json',
@@ -46,6 +49,8 @@ const LEGACY_DEPENDENCY_MATERIALIZATION_PATTERNS = Object.freeze([
   new RegExp(escapeRegExp(['SDKWORK', 'DEPENDENCIES_'].join('_')), 'u'),
   new RegExp(escapeRegExp(`[${['sdkwork', 'dependencies'].join('-')}]`), 'u'),
 ]);
+
+const MANIFEST_PACKAGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*-(standalone|cloud)-[a-z0-9][a-z0-9-]*-[a-z0-9][a-z0-9-]*$/u;
 
 function requireFile(filePath, issues) {
   if (!existsSync(path.resolve(filePath))) {
@@ -112,6 +117,111 @@ function validateYamlText(filePath, issues) {
   }
 }
 
+function validateAppManifestStandard(manifest, issues, filePath = 'sdkwork.app.config.json') {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    issues.push(`${filePath} must be a JSON object`);
+    return;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(manifest.backend ?? {}, 'tenantId')) {
+    issues.push(`${filePath}: backend.tenantId must not be present; tenant context comes from access/auth tokens`);
+  }
+  if (Object.prototype.hasOwnProperty.call(manifest.backend ?? {}, 'tenant_id')) {
+    issues.push(`${filePath}: backend.tenant_id must not be present; tenant context comes from access/auth tokens`);
+  }
+
+  const supportedProfiles = manifest.runtime?.supportedDeploymentProfiles;
+  if (!Array.isArray(supportedProfiles) || supportedProfiles.length === 0) {
+    issues.push(`${filePath}: runtime.supportedDeploymentProfiles must be a non-empty array`);
+  } else {
+    supportedProfiles.forEach((profile, index) => {
+      if (!SUPPORTED_DEPLOYMENT_PROFILES.includes(profile)) {
+        issues.push(`${filePath}: runtime.supportedDeploymentProfiles[${index}] must be standalone or cloud`);
+      }
+    });
+  }
+
+  const defaultDeploymentProfile = manifest.runtime?.defaultDeploymentProfile;
+  if (!SUPPORTED_DEPLOYMENT_PROFILES.includes(defaultDeploymentProfile)) {
+    issues.push(`${filePath}: runtime.defaultDeploymentProfile must be standalone or cloud`);
+  } else if (Array.isArray(supportedProfiles) && !supportedProfiles.includes(defaultDeploymentProfile)) {
+    issues.push(`${filePath}: runtime.defaultDeploymentProfile must be listed in runtime.supportedDeploymentProfiles`);
+  }
+
+  const packages = manifest.artifacts?.installConfig?.packages;
+  if (!Array.isArray(packages) || packages.length === 0) {
+    issues.push(`${filePath}: artifacts.installConfig.packages must be a non-empty array`);
+    return;
+  }
+
+  const packageIds = new Set();
+  packages.forEach((packageEntry, index) => {
+    const label = `${filePath}: artifacts.installConfig.packages[${index}]`;
+    const packageId = packageEntry?.id;
+    if (typeof packageId !== 'string' || !MANIFEST_PACKAGE_ID_PATTERN.test(packageId)) {
+      issues.push(`${label}.id must use a canonical package id with deployment profile segment`);
+    }
+    if (packageIds.has(packageId)) {
+      issues.push(`${label}.id duplicates package id ${packageId}`);
+    }
+    packageIds.add(packageId);
+
+    const deploymentProfile = packageEntry?.deploymentProfile;
+    if (deploymentProfile === undefined) {
+      issues.push(`${label}.deploymentProfile is required`);
+    } else if (!SUPPORTED_DEPLOYMENT_PROFILES.includes(deploymentProfile)) {
+      issues.push(`${label}.deploymentProfile must be standalone or cloud`);
+    } else if (Array.isArray(supportedProfiles) && !supportedProfiles.includes(deploymentProfile)) {
+      issues.push(`${label}.deploymentProfile must be listed in runtime.supportedDeploymentProfiles`);
+    }
+
+    const runtimeTarget = packageEntry?.runtimeTarget;
+    if (runtimeTarget === undefined) {
+      issues.push(`${label}.runtimeTarget is required`);
+    } else if (!SUPPORTED_RUNTIME_TARGETS.includes(runtimeTarget)) {
+      issues.push(`${label}.runtimeTarget must be a canonical runtime target`);
+    }
+  });
+
+  const defaultPackageIds = [
+    ['publish.defaultPackageId', manifest.publish?.defaultPackageId],
+    ['artifacts.installConfig.defaultPackageId', manifest.artifacts?.installConfig?.defaultPackageId],
+  ];
+  defaultPackageIds.forEach(([field, packageId]) => {
+    if (typeof packageId !== 'string') {
+      return;
+    }
+    if (!MANIFEST_PACKAGE_ID_PATTERN.test(packageId)) {
+      issues.push(`${filePath}: ${field} must use a canonical package id`);
+    }
+    if (!packageIds.has(packageId)) {
+      issues.push(`${filePath}: ${field} references unknown package id ${packageId}`);
+    }
+  });
+
+  if (Array.isArray(manifest.release?.notes)) {
+    manifest.release.notes.forEach((note, noteIndex) => {
+      if (!Array.isArray(note?.packageIds)) {
+        return;
+      }
+      note.packageIds.forEach((packageId, packageIndex) => {
+        if (!packageIds.has(packageId)) {
+          issues.push(`${filePath}: release.notes[${noteIndex}].packageIds[${packageIndex}] references unknown package id ${packageId}`);
+        }
+      });
+    });
+  }
+}
+
+function validateRootAppManifest(issues) {
+  const manifestPath = 'sdkwork.app.config.json';
+  if (!existsSync(path.resolve(manifestPath))) {
+    return;
+  }
+  const manifest = JSON.parse(readFileSync(path.resolve(manifestPath), 'utf8'));
+  validateAppManifestStandard(manifest, issues, manifestPath);
+}
+
 async function validateExamples(issues) {
   for (const configPath of [
     'examples/sdkwork-claw-router/sdkwork.workflow.json',
@@ -161,6 +271,7 @@ async function main() {
   for (const filePath of REQUIRED_FILES.filter((item) => item.endsWith('.yml'))) {
     validateYamlText(filePath, issues);
   }
+  validateRootAppManifest(issues);
   await validateExamples(issues);
   await validateGenerator(issues);
 
@@ -186,6 +297,7 @@ export {
   REQUIRED_FILES,
   extractLiteralRunBlocks,
   main,
+  validateAppManifestStandard,
   validateExamples,
   validateYamlText,
 };

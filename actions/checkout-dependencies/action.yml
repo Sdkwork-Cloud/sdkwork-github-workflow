@@ -28,14 +28,18 @@ runs:
           $path = [string]$dependency.path
           $repo = [string]$dependency.repository
           $ref = [string]$dependency.ref
+          $dependencyType = [string]$dependency.dependencyType
+          if (-not $dependencyType) {
+            $dependencyType = "runtime"
+          }
           if (-not $path -or -not $repo) {
             throw "Dependency plan item is missing repository or path"
           }
           if (Test-Path -LiteralPath $path) {
-            Write-Host "[sdkwork-release-checkout] skip existing $path"
+            Write-Host "[sdkwork-release-checkout] skip existing $dependencyType dependency $path"
             continue
           }
-          Write-Host "[sdkwork-release-checkout] checkout $repo -> $path"
+          Write-Host "[sdkwork-release-checkout] checkout $dependencyType dependency $repo -> $path"
           git -c "http.https://github.com/.extraheader=$authHeader" clone --no-tags --depth 1 "https://github.com/$repo.git" $path
           git -c "http.https://github.com/.extraheader=$authHeader" -C $path fetch --depth 1 origin $ref
           git -C $path checkout FETCH_HEAD

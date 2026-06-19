@@ -39,7 +39,7 @@ on:
         type: string
         default: all
       profile:
-        description: Runtime profile filter.
+        description: Package profile filter.
         required: false
         type: string
         default: all

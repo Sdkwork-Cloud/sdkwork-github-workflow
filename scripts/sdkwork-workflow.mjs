@@ -150,6 +150,7 @@ const ROOT_CONFIG_KEYS = Object.freeze([
   'app',
   'release',
   'dependencies',
+  'verificationDependencies',
   'toolchains',
   'lifecycle',
   'targets',
@@ -160,6 +161,10 @@ const ROOT_CONFIG_KEYS = Object.freeze([
 const APP_CONFIG_KEYS = Object.freeze(['id', 'name', 'repository', 'sourcePath', 'configPath']);
 const RELEASE_CONFIG_KEYS = Object.freeze(['artifactPrefix', 'defaultVersion', 'versionInput', 'tagInput', 'channelInput', 'changelog']);
 const DEPENDENCY_CONFIG_KEYS = Object.freeze(['id', 'repository', 'ref', 'refInput', 'path', 'tokenSecret', 'submodules']);
+const VERIFICATION_DEPENDENCY_CONFIG_KEYS = Object.freeze([
+  ...DEPENDENCY_CONFIG_KEYS,
+  'purpose',
+]);
 const TOOLCHAIN_CONFIG_KEYS = Object.freeze(['node', 'pnpm', 'python', 'java', 'go', 'rust', 'flutter', 'dotnet', 'android', 'xcode', 'wix']);
 const TOOLCHAIN_STRING_KEYS = Object.freeze(['node', 'pnpm', 'python', 'java', 'go', 'rust', 'flutter', 'dotnet', 'wix']);
 const TOOLCHAIN_BOOLEAN_KEYS = Object.freeze(['android', 'xcode']);
@@ -562,6 +567,19 @@ function validateWorkflowConfig(config) {
       );
     }
   }
+  if (config.verificationDependencies !== undefined) {
+    validateArray(config.verificationDependencies, 'verificationDependencies', issues);
+    if (Array.isArray(config.verificationDependencies)) {
+      config.verificationDependencies.forEach((dependency, index) =>
+        validateDependency(dependency, index, issues, {
+          appSourcePath: config.app?.sourcePath ?? '.',
+          labelPrefix: 'verificationDependencies',
+          allowedKeys: VERIFICATION_DEPENDENCY_CONFIG_KEYS,
+          allowPurpose: true,
+        })
+      );
+    }
+  }
 
   if (config.toolchains !== undefined) {
     validateToolchains(config.toolchains, issues);
@@ -598,10 +616,20 @@ function validateWorkflowConfig(config) {
   return issues;
 }
 
-function validateDependency(dependency, index, issues, { appSourcePath = '.' } = {}) {
-  const label = `dependencies[${index}]`;
+function validateDependency(
+  dependency,
+  index,
+  issues,
+  {
+    appSourcePath = '.',
+    labelPrefix = 'dependencies',
+    allowedKeys = DEPENDENCY_CONFIG_KEYS,
+    allowPurpose = false,
+  } = {},
+) {
+  const label = `${labelPrefix}[${index}]`;
   validateObject(dependency, label, issues);
-  validateKnownProperties(dependency, label, DEPENDENCY_CONFIG_KEYS, issues);
+  validateKnownProperties(dependency, label, allowedKeys, issues);
   validateRequiredString(dependency?.id, `${label}.id`, issues, { pattern: ID_PATTERN });
   validateRequiredString(dependency?.repository, `${label}.repository`, issues, { pattern: REPOSITORY_PATTERN });
   validateOptionalGitRef(dependency?.ref, `${label}.ref`, issues);
@@ -620,6 +648,9 @@ function validateDependency(dependency, index, issues, { appSourcePath = '.' } =
   }
   if (dependency?.submodules !== undefined && !['false', 'true', 'recursive'].includes(String(dependency.submodules))) {
     issues.push(`${label}.submodules must be false, true, or recursive`);
+  }
+  if (allowPurpose && dependency?.purpose !== undefined) {
+    validateOptionalString(dependency.purpose, `${label}.purpose`, issues);
   }
 }
 
@@ -1363,15 +1394,29 @@ function createDependencyPlan(config, inputRefs = {}) {
   if (issues.length > 0) {
     throw new Error(`Invalid workflow config: ${issues.join('; ')}`);
   }
-  const dependencies = config.dependencies ?? [];
+  const dependencies = [
+    ...(config.dependencies ?? []).map((dependency, sourceIndex) => ({
+      dependency,
+      dependencyType: 'runtime',
+      purpose: '',
+      sourceIndex,
+    })),
+    ...(config.verificationDependencies ?? []).map((dependency, sourceIndex) => ({
+      dependency,
+      dependencyType: 'verification',
+      purpose: dependency.purpose ?? '',
+      sourceIndex,
+    })),
+  ];
   return {
-    include: dependencies.map((dependency, index) => {
+    include: dependencies.map(({ dependency, dependencyType, purpose, sourceIndex }) => {
       const ref = resolveDependencyRef(dependency, inputRefs);
       if (!isSafeGitRef(ref)) {
         const source = dependency.refInput && inputRefs[dependency.refInput]
           ? ` resolved from ${dependency.refInput}`
           : '';
-        throw new Error(`dependencies[${index}].ref${source} must be a safe git ref`);
+        const label = dependencyType === 'verification' ? 'verificationDependencies' : 'dependencies';
+        throw new Error(`${label}[${sourceIndex}].ref${source} must be a safe git ref`);
       }
       return {
         id: dependency.id,
@@ -1380,6 +1425,8 @@ function createDependencyPlan(config, inputRefs = {}) {
         path: resolvedDependencyPath(dependency),
         tokenSecret: dependency.tokenSecret ?? null,
         submodules: dependency.submodules ?? false,
+        dependencyType,
+        purpose,
       };
     }),
   };
@@ -2605,9 +2652,11 @@ if (invokedPath === modulePath) {
 export {
   SCHEMA_VERSION,
   SUPPORTED_ARCHITECTURES,
+  SUPPORTED_DEPLOYMENT_PROFILES,
   SUPPORTED_FORMATS,
   SUPPORTED_PLATFORMS,
   SUPPORTED_PROFILES,
+  SUPPORTED_RUNTIME_TARGETS,
   createDependencyPlan,
   createDeploymentMatrix,
   createLifecyclePlan,
