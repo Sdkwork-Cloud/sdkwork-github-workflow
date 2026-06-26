@@ -10,7 +10,7 @@ SDKWork applications need to be committed to Git and packaged or deployed throug
 - Release upload, artifact retention, and validation policies become inconsistent.
 - Security posture depends on the habits of each repository.
 
-The `sdkwork-claw-router` workflow demonstrates the required capability set, but it mixes framework concerns and application-specific build commands in one YAML file.
+The `sdkwork-clawrouter` workflow demonstrates the required capability set, but it mixes framework concerns and application-specific build commands in one YAML file.
 
 ## Recommended Architecture
 
@@ -158,7 +158,7 @@ The framework supports these package formats:
 
 Package ids use `<platform>-<architecture>-<deployment-profile>-<profile>-<format-token>`. Linux native `deb` and `rpm` packages insert the distribution segment after `linux`. Docker-compatible artifacts use `runtimeTarget = "container"` and a container format such as `oci` or `docker`; `docker` is not a deployment profile, runtime target, or package profile.
 
-## Migration From sdkwork-claw-router
+## Migration From sdkwork-clawrouter
 
 The original workflow contains these framework-level concepts:
 
@@ -174,7 +174,7 @@ The original workflow contains these framework-level concepts:
 - Artifact upload.
 - GitHub Release upload.
 
-The example `examples/sdkwork-claw-router/sdkwork.workflow.json` maps these into:
+The example `examples/sdkwork-clawrouter/sdkwork.workflow.json` maps these into:
 
 - `dependencies` for appbase/core/ui/im-sdk/sdk-generator.
 - `toolchains` for Node, pnpm, Python, Rust, and WiX.

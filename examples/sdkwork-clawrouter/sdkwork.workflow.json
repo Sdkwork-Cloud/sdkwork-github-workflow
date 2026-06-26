@@ -2,10 +2,10 @@
   "$schema": "../../schemas/sdkwork-workflow.schema.json",
   "schemaVersion": "2026-06-06.sdkwork.workflow.v1",
   "app": {
-    "id": "sdkwork-claw-router",
+    "id": "sdkwork-clawrouter",
     "name": "SDKWork Claw Router",
-    "repository": "Sdkwork-Cloud/sdkwork-claw-router",
-    "sourcePath": "apps/sdkwork-claw-router"
+    "repository": "Sdkwork-Cloud/sdkwork-clawrouter",
+    "sourcePath": "apps/sdkwork-clawrouter"
   },
   "release": {
     "artifactPrefix": "clawrouter",
@@ -65,15 +65,15 @@
       {
         "name": "Install portal workspace dependencies",
         "shell": "pwsh",
-        "workingDirectory": "apps/sdkwork-claw-router",
-        "run": "pnpm --dir apps/sdkwork-claw-router-portal install --frozen-lockfile"
+        "workingDirectory": "apps/sdkwork-clawrouter",
+        "run": "pnpm --dir apps/sdkwork-clawrouter-pc install --frozen-lockfile"
       }
     ],
     "build": [
       {
         "name": "Build production artifacts",
         "shell": "pwsh",
-        "workingDirectory": "apps/sdkwork-claw-router",
+        "workingDirectory": "apps/sdkwork-clawrouter",
         "run": "$downloadArgs = @(\"--version\", $env:SDKWORK_PACKAGE_VERSION, \"--release-tag\", $env:SDKWORK_RELEASE_TAG)\nif ($env:CLAWROUTER_DOWNLOAD_CDN_BASE_URL) {\n  $downloadArgs += @(\"--cdn-base-url\", $env:CLAWROUTER_DOWNLOAD_CDN_BASE_URL)\n}\nnode scripts/update-claw-router-downloads.mjs @downloadArgs\nnode scripts/build-claw-router-production.mjs\ncargo build -p sdkwork-claw-installer --bin clawrouterctl --release"
       }
     ],
@@ -81,15 +81,15 @@
       {
         "name": "Stage production files",
         "shell": "pwsh",
-        "workingDirectory": "apps/sdkwork-claw-router",
-        "run": "$ErrorActionPreference = \"Stop\"\n$stage = Join-Path (Get-Location) \"dist/install-package-staging\"\n$output = Join-Path (Get-Location) \"dist/install-packages\"\nRemove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue\nRemove-Item -LiteralPath $output -Recurse -Force -ErrorAction SilentlyContinue\nNew-Item -ItemType Directory -Force -Path (Join-Path $stage \"bin\") | Out-Null\nNew-Item -ItemType Directory -Force -Path (Join-Path $stage \"portal\") | Out-Null\n$suffix = if ($IsWindows) { \".exe\" } else { \"\" }\nCopy-Item -LiteralPath \"target/release/clawrouter$suffix\" -Destination (Join-Path $stage \"bin/clawrouter$suffix\")\nCopy-Item -LiteralPath \"target/release/clawrouterctl$suffix\" -Destination (Join-Path $stage \"bin/clawrouterctl$suffix\")\nCopy-Item -LiteralPath \".env.release.example\" -Destination (Join-Path $stage \".env.release.example\")\nCopy-Item -LiteralPath \"apps/sdkwork-claw-router-portal/dist\" -Destination (Join-Path $stage \"portal/dist\") -Recurse"
+        "workingDirectory": "apps/sdkwork-clawrouter",
+        "run": "$ErrorActionPreference = \"Stop\"\n$stage = Join-Path (Get-Location) \"dist/install-package-staging\"\n$output = Join-Path (Get-Location) \"dist/install-packages\"\nRemove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue\nRemove-Item -LiteralPath $output -Recurse -Force -ErrorAction SilentlyContinue\nNew-Item -ItemType Directory -Force -Path (Join-Path $stage \"bin\") | Out-Null\nNew-Item -ItemType Directory -Force -Path (Join-Path $stage \"portal\") | Out-Null\n$suffix = if ($IsWindows) { \".exe\" } else { \"\" }\nCopy-Item -LiteralPath \"target/release/clawrouter$suffix\" -Destination (Join-Path $stage \"bin/clawrouter$suffix\")\nCopy-Item -LiteralPath \"target/release/clawrouterctl$suffix\" -Destination (Join-Path $stage \"bin/clawrouterctl$suffix\")\nCopy-Item -LiteralPath \".env.release.example\" -Destination (Join-Path $stage \".env.release.example\")\nCopy-Item -LiteralPath \"apps/sdkwork-clawrouter-pc/dist\" -Destination (Join-Path $stage \"portal/dist\") -Recurse"
       }
     ],
     "package": [
       {
         "name": "Build selected install package",
         "shell": "pwsh",
-        "workingDirectory": "apps/sdkwork-claw-router",
+        "workingDirectory": "apps/sdkwork-clawrouter",
         "run": "$ErrorActionPreference = \"Stop\"\nif ($env:SDKWORK_PACKAGE_FORMAT -in @(\"deb\", \"rpm\", \"pkg\", \"msi\")) {\n  node scripts/build-claw-router-native-installer.mjs --package-id $env:SDKWORK_PACKAGE_ID --version $env:SDKWORK_PACKAGE_VERSION --staging-root dist/install-package-staging --output-dir dist/install-packages --json\n} else {\n  node scripts/build-claw-router-install-package.mjs --package-id $env:SDKWORK_PACKAGE_ID --version $env:SDKWORK_PACKAGE_VERSION --staging-root dist/install-package-staging --output-dir dist/install-packages --json\n}"
       }
     ],
@@ -97,7 +97,7 @@
       {
         "name": "Validate selected install package",
         "shell": "pwsh",
-        "workingDirectory": "apps/sdkwork-claw-router",
+        "workingDirectory": "apps/sdkwork-clawrouter",
         "run": "$ErrorActionPreference = \"Stop\"\n$file = Get-ChildItem -Path \"dist/install-packages\" -File |\n  Where-Object { $_.Name -like \"clawrouter-*$env:SDKWORK_PACKAGE_VERSION.*\" -and $_.Name -notlike \"*.manifest.json\" -and $_.Name -notlike \"install-packages-manifest*.json\" } |\n  Select-Object -First 1\nif (-not $file) { throw \"Missing built install package artifact for $env:SDKWORK_PACKAGE_ID\" }\nnode scripts/validate-claw-router-install-artifacts.mjs --package-id $env:SDKWORK_PACKAGE_ID --artifact-path $file.FullName --version $env:SDKWORK_PACKAGE_VERSION"
       }
     ],
@@ -105,7 +105,7 @@
       {
         "name": "Sign artifacts placeholder",
         "shell": "pwsh",
-        "workingDirectory": "apps/sdkwork-claw-router",
+        "workingDirectory": "apps/sdkwork-clawrouter",
         "run": "Write-Host \"Signing policy is configured at the application or environment level for $env:SDKWORK_PACKAGE_ID\""
       }
     ],
@@ -113,7 +113,7 @@
       {
         "name": "SBOM placeholder",
         "shell": "pwsh",
-        "workingDirectory": "apps/sdkwork-claw-router",
+        "workingDirectory": "apps/sdkwork-clawrouter",
         "run": "Write-Host \"SBOM generation hook for $env:SDKWORK_PACKAGE_ID\""
       }
     ],
@@ -121,7 +121,7 @@
       {
         "name": "Deploy package placeholder",
         "shell": "pwsh",
-        "workingDirectory": "apps/sdkwork-claw-router",
+        "workingDirectory": "apps/sdkwork-clawrouter",
         "run": "Write-Host \"Deploying $env:SDKWORK_PACKAGE_ID to $env:SDKWORK_DEPLOY_ENVIRONMENT at $env:SDKWORK_DEPLOY_URL\""
       }
     ],
@@ -129,7 +129,7 @@
       {
         "name": "Publish package placeholder",
         "shell": "pwsh",
-        "workingDirectory": "apps/sdkwork-claw-router",
+        "workingDirectory": "apps/sdkwork-clawrouter",
         "run": "Write-Host \"Publishing $env:SDKWORK_PACKAGE_ID through $env:SDKWORK_DEPLOY_ENVIRONMENT\""
       }
     ]
@@ -146,7 +146,7 @@
       ],
       "runner": "ubuntu-24.04",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "server"
@@ -162,7 +162,7 @@
       ],
       "runner": "ubuntu-24.04-arm",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "server"
@@ -178,7 +178,7 @@
       ],
       "runner": "ubuntu-24.04",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "server"
@@ -193,7 +193,7 @@
       ],
       "runner": "windows-2022",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "server"
@@ -208,7 +208,7 @@
       ],
       "runner": "windows-11-arm",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "server"
@@ -223,7 +223,7 @@
       ],
       "runner": "macos-15-intel",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "server"
@@ -238,7 +238,7 @@
       ],
       "runner": "macos-14",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "server"
@@ -254,7 +254,7 @@
       ],
       "runner": "ubuntu-24.04",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "desktop"
@@ -269,7 +269,7 @@
       ],
       "runner": "ubuntu-24.04",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "desktop"
@@ -285,7 +285,7 @@
       ],
       "runner": "windows-2022",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "desktop"
@@ -301,7 +301,7 @@
       ],
       "runner": "macos-14",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "standalone",
       "runtimeTarget": "desktop"
@@ -317,7 +317,7 @@
       ],
       "runner": "ubuntu-24.04",
       "outputGlobs": [
-        "apps/sdkwork-claw-router/dist/install-packages/*"
+        "apps/sdkwork-clawrouter/dist/install-packages/*"
       ],
       "deploymentProfile": "cloud",
       "runtimeTarget": "container"
@@ -342,7 +342,7 @@
       "platform": "linux",
       "format": "deb",
       "runner": "ubuntu-24.04",
-      "url": "https://api.sdkwork.com/apps/sdkwork-claw-router",
+      "url": "https://api.sdkwork.com/apps/sdkwork-clawrouter",
       "lifecycle": "deploy",
       "deploymentProfile": "standalone",
       "runtimeTarget": "server"

@@ -32,7 +32,7 @@ This repository implements the SDKWork standard in `../sdkwork-specs/GITHUB_WORK
 - `scripts/sdkwork-workflow.mjs` - zero-dependency Node CLI and library for validation, matrix planning, dependency planning, changelog rendering, and lifecycle execution.
 - `schemas/sdkwork-workflow.schema.json` - JSON Schema for `sdkwork.workflow.json`.
 - `templates/app-package.workflow.yml` - minimal workflow entrypoint for application repositories.
-- `examples/sdkwork-claw-router` - migration example based on the original `sdkwork-claw-router` workflow.
+- `examples/sdkwork-clawrouter` - migration example based on the original `sdkwork-clawrouter` workflow.
 - `examples/mobile-flutter` - mobile packaging example.
 - `tests` - Node test coverage for framework behavior.
 
@@ -412,7 +412,7 @@ Render release notes:
 
 ```bash
 node scripts/sdkwork-workflow.mjs changelog \
-  --config examples/sdkwork-claw-router/sdkwork.workflow.json \
+  --config examples/sdkwork-clawrouter/sdkwork.workflow.json \
   --version 0.3.0 \
   --release-tag v0.3.0 \
   --output tmp/release-notes.md
@@ -422,7 +422,7 @@ Render dependency refs from a local file:
 
 ```bash
 node scripts/sdkwork-workflow.mjs dependencies \
-  --config examples/sdkwork-claw-router/sdkwork.workflow.json \
+  --config examples/sdkwork-clawrouter/sdkwork.workflow.json \
   --dependency-refs-file refs.json \
   --json
 ```
