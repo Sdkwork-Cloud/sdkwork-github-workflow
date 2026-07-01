@@ -8,7 +8,8 @@
     "test": "node --test",
     "validate": "npm test && node scripts/validate-repository.mjs",
     "validate:example": "node scripts/sdkwork-workflow.mjs validate --config examples/sdkwork-clawrouter/sdkwork.workflow.json",
-    "matrix:example": "node scripts/sdkwork-workflow.mjs matrix --config examples/sdkwork-clawrouter/sdkwork.workflow.json --platform all --architecture all --profile all --format all --json"
+    "matrix:example": "node scripts/sdkwork-workflow.mjs matrix --config examples/sdkwork-clawrouter/sdkwork.workflow.json --platform all --architecture all --profile all --format all --json",
+    "check:app-composition": "node ../sdkwork-specs/tools/verify-repo.mjs --root ."
   },
   "engines": {
     "node": ">=20.11.0"

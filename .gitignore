@@ -16,3 +16,27 @@ config/*.local.toml
 # SDKWork local runtime state
 .runtime/
 **/.runtime/
+**/node_modules/
+target/
+/target/
+**/target/
+.env.*
+!.env.example
+!.env.*.example
+!.env.postgres.example
+dist/
+**/dist/
+coverage/
+**/.pnpm-store/
+Thumbs.db
+.idea/
+.vscode/
+**/.sdkwork/local/
+**/.sdkwork/secrets/
+**/.sdkwork/cache/
+**/.sdkwork/tmp/
+**/.sdkwork/dart/pub-cache/
+**/.sdkwork/manual-backups/
+**/.sdkwork/sdkwork-generator-changes.json
+**/.sdkwork/sdkwork-generator-manifest.json
+**/.sdkwork/sdkwork-generator-report.json

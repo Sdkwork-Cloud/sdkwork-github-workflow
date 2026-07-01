@@ -286,5 +286,6 @@
   "metadata": {
     "standardOwner": "sdkwork-platform",
     "initializedAt": "2026-05-07T00:00:00Z"
-  }
+  },
+  "sdkDependencies": []
 }

@@ -1,4 +1,5 @@
 # SDKWork GitHub Workflow Framework
+repository-kind: foundation-dependency
 
 Reusable GitHub Actions workflow framework for SDKWork application packaging, release, and deployment pipelines.
 
