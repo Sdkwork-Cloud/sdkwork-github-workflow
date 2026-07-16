@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Reusable GitHub Actions workflow framework for SDKWork application packaging and deployment.",
   "scripts": {
-    "test": "node --test",
+    "stop": "node ../sdkwork-specs/tools/stop-sdkwork-workspace-processes.mjs --workspace .",    "test": "node --test",
     "validate": "npm test && node scripts/validate-repository.mjs",
     "validate:example": "node scripts/sdkwork-workflow.mjs validate --config examples/sdkwork-clawrouter/sdkwork.workflow.json",
     "matrix:example": "node scripts/sdkwork-workflow.mjs matrix --config examples/sdkwork-clawrouter/sdkwork.workflow.json --platform all --architecture all --profile all --format all --json",
