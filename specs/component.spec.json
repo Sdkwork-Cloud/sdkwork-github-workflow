@@ -3,67 +3,55 @@
   "kind": "sdkwork.component.spec",
   "component": {
     "name": "@sdkwork/github-workflow",
-    "displayName": "Github Workflow",
+    "displayName": "SDKWork GitHub Workflow Framework",
     "version": "0.1.0",
     "type": "node-package",
     "root": "sdkwork-github-workflow",
-    "domain": "intelligence",
-    "capability": "github-workflow",
-    "languages": [
-      "typescript"
-    ],
+    "domain": "platform",
+    "capability": "release-workflow",
+    "languages": ["javascript", "yaml"],
     "generated": false,
+    "status": "active",
     "manifests": [
-      "package.json"
+      "package.json",
+      "schemas/sdkwork-workflow.schema.json",
+      ".github/workflows/sdkwork-package.yml"
     ]
   },
   "canonicalSpecs": [
     {
-      "file": "COMPONENT_SPEC.md",
-      "path": "../sdkwork-specs/COMPONENT_SPEC.md",
-      "purpose": "Component-local contract and discovery rules."
+      "file": "GITHUB_WORKFLOW_SPEC.md",
+      "path": "../sdkwork-specs/GITHUB_WORKFLOW_SPEC.md",
+      "purpose": "Reusable packaging, publication, and deployment workflow authority."
     },
     {
-      "file": "CODE_STYLE_SPEC.md",
-      "path": "../sdkwork-specs/CODE_STYLE_SPEC.md",
-      "purpose": "Authored source structure and generated code boundaries."
+      "file": "RELEASE_SPEC.md",
+      "path": "../sdkwork-specs/RELEASE_SPEC.md",
+      "purpose": "Release gates, rollout, rollback, and release evidence."
     },
     {
-      "file": "NAMING_SPEC.md",
-      "path": "../sdkwork-specs/NAMING_SPEC.md",
-      "purpose": "Canonical SDKWork naming rules."
+      "file": "SUPPLY_CHAIN_SECURITY_SPEC.md",
+      "path": "../sdkwork-specs/SUPPLY_CHAIN_SECURITY_SPEC.md",
+      "purpose": "Artifact integrity, signing, SBOM, provenance, and attestations."
     },
     {
-      "file": "MODULE_SPEC.md",
-      "path": "../sdkwork-specs/MODULE_SPEC.md",
-      "purpose": "Reusable module and package boundary rules."
-    },
-    {
-      "file": "TEST_SPEC.md",
-      "path": "../sdkwork-specs/TEST_SPEC.md",
-      "purpose": "Verification and contract testing expectations."
-    },
-    {
-      "file": "TYPESCRIPT_CODE_SPEC.md",
-      "path": "../sdkwork-specs/TYPESCRIPT_CODE_SPEC.md",
-      "purpose": "TypeScript and Node package rules."
+      "file": "SDKWORK_DEPLOY_SPEC.md",
+      "path": "../sdkwork-specs/SDKWORK_DEPLOY_SPEC.md",
+      "purpose": "Typed deployment and immutable artifact evidence integration."
     }
   ],
   "contracts": {
-    "publicExports": [
-      "."
-    ],
-    "runtimeEntrypoints": [
-      "package.json#scripts.test"
-    ],
+    "publicExports": ["."],
+    "runtimeEntrypoints": ["sdkwork-workflow"],
     "routeManifest": null,
     "sdkClients": [],
     "events": [],
-    "configKeys": []
+    "configKeys": ["sdkwork.workflow.json"]
   },
   "verification": {
     "commands": [
-      "pnpm test"
+      "pnpm validate",
+      "node ../sdkwork-specs/tools/verify-repo.mjs --root ."
     ]
   }
 }

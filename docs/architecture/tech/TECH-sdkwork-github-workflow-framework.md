@@ -39,6 +39,12 @@ This follows the current GitHub Actions reusable workflow model and avoids vendo
 - `security`: OIDC, attestations, SBOM, signing flags.
 - `publish`: workflow artifact and GitHub Release settings.
 
+For every deployable target the planner derives evidence paths and upload globs.
+The reusable workflow verifies those documents after the application validate
+phase, uploads them with the package, and verifies the downloaded artifact bytes
+again in each deployment job. `evidence:create` is the shared helper for hashing
+the primary artifact and writing the canonical JSON document.
+
 ### Planner CLI
 
 `scripts/sdkwork-workflow.mjs` is a zero-dependency Node tool used by tests and workflows.
@@ -54,10 +60,12 @@ The planner is intentionally outside YAML so matrix logic can be tested.
 
 ### Reusable Workflow
 
-`.github/workflows/sdkwork-package.yml` has two jobs:
+`.github/workflows/sdkwork-package.yml` has four job roles:
 
 - `plan`: checks out app and framework, validates config, resolves matrix, resolves dependencies.
-- `package`: runs per target, checks out app/framework/dependencies, sets up toolchains, runs lifecycle phases, uploads workflow artifacts, attests provenance, uploads release assets.
+- `package`: runs per target, checks out app/framework/dependencies, sets up toolchains, runs lifecycle phases, verifies evidence, uploads scoped workflow artifacts, attests provenance, uploads release assets.
+- `publish`: when aggregate Release is enabled, downloads only `sdkwork-publishable-*` artifacts, runs finalization, and uploads configured assets once.
+- `deploy`: downloads one selected publishable package, revalidates evidence, binds a GitHub Environment, and runs deploy/publish lifecycle side effects.
 
 ### Composite Actions
 
@@ -157,7 +165,17 @@ The framework supports these package formats:
 - Tablet: `apk`, `aab`, `ipa`, `msix`
 - Browser/mini-program/JVM: `web`, `web-url`, `static`, `mini-program-package`, `jar`, `war`
 
-Package ids use `<platform>-<architecture>-<deployment-profile>-<profile>-<format-token>`. Linux native `deb` and `rpm` packages insert the distribution segment after `linux`. Docker-compatible artifacts use `runtimeTarget = "container"` and a container format such as `oci` or `docker`; `docker` is not a deployment profile, runtime target, or package profile.
+Package targets declare `profileBinding = fixed|runtime-configurable|non-deployable`.
+Fixed targets use `<platform>-<architecture>-<deployment-profile>-<profile>-<format-token>`.
+Runtime-configurable client targets are built once with a `dual` package token,
+declare both supported profiles, and select one active profile only at runtime or
+deployment. Non-deployable `test-runner` targets use the `test` binding token and
+never enter publication or deployment selectors. Linux native `deb` and `rpm`
+packages insert the distribution segment after `linux`. Docker-compatible
+artifacts use `runtimeTarget = "container"` and a container format such as `oci`
+or `docker`; `docker` is not a deployment profile, runtime target, or package
+profile. Deployment matrix items always carry a resolved `artifactEvidencePath`
+so the deployment lifecycle can verify immutable evidence before side effects.
 
 ## Migration From sdkwork-clawrouter
 
@@ -226,4 +244,3 @@ The design aligns with current GitHub Actions practices:
 Dynamic lifecycle commands cannot use GitHub's native `uses:` syntax because Actions does not support dynamically generated steps. The framework therefore rejects lifecycle `uses:` entries and executes declared `run` commands through a controlled Node runner. Shared workflow behavior that genuinely needs `uses:` remains in framework-level composite actions.
 
 Application-specific package builders stay in application repositories. This keeps the framework generic and avoids embedding assumptions about Tauri, Flutter, Gradle, Docker, Helm, or custom SDKWork packaging internals.
-

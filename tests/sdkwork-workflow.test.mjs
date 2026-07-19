@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   createPackageMatrix,
+  createArtifactEvidence,
   createLifecyclePlan,
   loadWorkflowConfig,
   redactSecretLikeValue,
@@ -16,6 +17,8 @@ import {
   initApplicationWorkflow,
   main,
   validateWorkflowConfig,
+  validateArtifactEvidenceDocument,
+  verifyArtifactEvidence,
 } from '../scripts/sdkwork-workflow.mjs';
 
 const tempRoot = path.resolve('tmp/tests/sdkwork-workflow');
@@ -346,7 +349,9 @@ test('uses deployment profile and runtime target in canonical package ids and li
   const matrix = createPackageMatrix(config, { platform: 'linux', format: 'deb' });
   assert.deepEqual(matrix.include[0], {
     id: 'linux-debian-x64-standalone-server-deb',
+    profileBinding: 'fixed',
     deploymentProfile: 'standalone',
+    deployable: true,
     runtimeTarget: 'server',
     profile: 'server',
     platform: 'linux',
@@ -356,6 +361,14 @@ test('uses deployment profile and runtime target in canonical package ids and li
     runner: 'ubuntu-24.04',
     packageId: 'linux-debian-x64-standalone-server-deb',
     artifactName: 'runtime-demo-linux-debian-x64-standalone-server-deb',
+    workflowArtifactName: 'sdkwork-publishable-runtime-demo-linux-debian-x64-standalone-server-deb',
+    artifactEvidencePaths: ['.sdkwork/evidence/linux-debian-x64-standalone-server-deb.json'],
+    artifactEvidencePathsText: '.sdkwork/evidence/linux-debian-x64-standalone-server-deb.json',
+    artifactUploadGlobs: [
+      '.sdkwork/evidence/linux-debian-x64-standalone-server-deb.json',
+      'dist/server/*.deb',
+    ],
+    artifactUploadGlobsText: '.sdkwork/evidence/linux-debian-x64-standalone-server-deb.json\ndist/server/*.deb',
     outputGlobs: ['dist/server/*.deb'],
     outputGlobsText: 'dist/server/*.deb',
   });
@@ -368,9 +381,14 @@ test('uses deployment profile and runtime target in canonical package ids and li
 
   assert.equal(plan.steps[0].env.SDKWORK_DEPLOYMENT_PROFILE, 'standalone');
   assert.equal(plan.steps[0].env.SDKWORK_RUNTIME_TARGET, 'server');
+  assert.equal(plan.steps[0].env.SDKWORK_WORKFLOW_CLI.replaceAll('\\', '/').endsWith('scripts/sdkwork-workflow.mjs'), true);
+  assert.equal(
+    plan.steps[0].env.SDKWORK_ARTIFACT_EVIDENCE_PATHS,
+    '.sdkwork/evidence/linux-debian-x64-standalone-server-deb.json',
+  );
 });
 
-test('requires deploymentProfile and runtimeTarget on every package target', () => {
+test('requires a profile binding or compatibility deploymentProfile and a runtimeTarget', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
     app: { id: 'missing-runtime-fields', repository: 'Org/missing-runtime-fields' },
@@ -392,6 +410,301 @@ test('requires deploymentProfile and runtimeTarget on every package target', () 
 
   assert.ok(issues.some((issue) => issue.includes('targets[0].deploymentProfile')));
   assert.ok(issues.some((issue) => issue.includes('targets[0].runtimeTarget')));
+});
+
+test('plans runtime-configurable client artifacts once with a dual package id and selected active profile', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'dual-client', repository: 'Org/dual-client' },
+    release: { artifactPrefix: 'dual-client' },
+    lifecycle: { package: [{ run: 'echo package' }], deploy: [{ run: 'echo deploy' }] },
+    targets: [
+      {
+        id: 'windows-x64-dual-desktop-msi',
+        profileBinding: 'runtime-configurable',
+        supportedDeploymentProfiles: ['standalone', 'cloud'],
+        defaultDeploymentProfile: 'standalone',
+        runtimeTarget: 'desktop',
+        profile: 'desktop',
+        platform: 'windows',
+        architecture: 'x64',
+        formats: ['msi'],
+        runner: 'windows-2022',
+        outputGlobs: ['dist/*.msi'],
+      },
+    ],
+    deployments: [
+      {
+        id: 'cloud-desktop',
+        environment: 'production-cloud-desktop',
+        deploymentProfile: 'cloud',
+        targetId: 'windows-x64-dual-desktop-msi',
+        artifactEvidencePath: '.sdkwork/evidence/windows-x64-dual-desktop-msi.json',
+        lifecycle: 'publish',
+      },
+    ],
+  };
+
+  assert.deepEqual(validateWorkflowConfig(config), []);
+  const packageMatrix = createPackageMatrix(config, { deploymentProfile: 'cloud' });
+  assert.equal(packageMatrix.include.length, 1);
+  assert.equal(packageMatrix.include[0].packageId, 'windows-x64-dual-desktop-msi');
+  assert.equal(packageMatrix.include[0].deploymentProfile, 'cloud');
+  assert.deepEqual(packageMatrix.include[0].supportedDeploymentProfiles, ['standalone', 'cloud']);
+
+  const packagePlan = createLifecyclePlan(config, {
+    phase: 'package',
+    matrixItem: packageMatrix.include[0],
+  });
+  assert.equal(packagePlan.steps[0].env.SDKWORK_DEPLOYMENT_PROFILE, 'cloud');
+  assert.equal(packagePlan.steps[0].env.SDKWORK_SUPPORTED_DEPLOYMENT_PROFILES, 'standalone,cloud');
+
+  const deploymentMatrix = createDeploymentMatrix(config, { packageMatrix });
+  assert.equal(deploymentMatrix.include.length, 1);
+  assert.equal(deploymentMatrix.include[0].deploymentProfile, 'cloud');
+  assert.equal(
+    deploymentMatrix.include[0].artifactEvidencePath,
+    '.sdkwork/evidence/windows-x64-dual-desktop-msi.json',
+  );
+});
+
+test('validates immutable artifact evidence against fixed and runtime-configurable package selections', () => {
+  const fixedItem = {
+    packageId: 'linux-x64-standalone-server-tar-gz',
+    profileBinding: 'fixed',
+    deploymentProfile: 'standalone',
+    runtimeTarget: 'server',
+  };
+  const baseEvidence = {
+    artifactId: 'sdkwork-demo-server-1.0.0',
+    artifactPath: 'dist/sdkwork-demo-server.tar.gz',
+    digest: `sha256:${'a'.repeat(64)}`,
+    version: '1.0.0',
+    sourceCommit: 'abcdef1234567',
+    packageId: fixedItem.packageId,
+    profileBinding: 'fixed',
+    deploymentProfile: 'standalone',
+    runtimeTarget: 'server',
+    environment: 'production',
+    profile: 'standalone.production',
+    sbom: 'sbom.cdx.json',
+    provenance: 'provenance.json',
+    signature: 'artifact.sig',
+  };
+  assert.deepEqual(validateArtifactEvidenceDocument(baseEvidence, fixedItem, { environment: 'production' }), []);
+  assert.ok(validateArtifactEvidenceDocument(
+    { ...baseEvidence, deploymentProfile: 'cloud' },
+    fixedItem,
+    { environment: 'production' },
+  ).some((issue) => issue.includes('deploymentProfile does not match')));
+
+  const dualItem = {
+    packageId: 'windows-x64-dual-desktop-msi',
+    profileBinding: 'runtime-configurable',
+    deploymentProfile: 'cloud',
+    runtimeTarget: 'desktop',
+  };
+  const dualEvidence = {
+    ...baseEvidence,
+    packageId: dualItem.packageId,
+    profileBinding: 'runtime-configurable',
+    runtimeTarget: 'desktop',
+    profile: 'cloud.production',
+    supportedDeploymentProfiles: ['standalone', 'cloud'],
+  };
+  delete dualEvidence.deploymentProfile;
+  assert.deepEqual(validateArtifactEvidenceDocument(dualEvidence, dualItem, { environment: 'production' }), []);
+});
+
+test('creates evidence from artifact bytes and rejects stale version, commit, or digest bindings', async () => {
+  const artifactPath = 'tmp/tests/sdkwork-workflow/evidence/demo.tar.gz';
+  const evidencePath = 'tmp/tests/sdkwork-workflow/evidence/demo.json';
+  const matrixItem = {
+    id: 'linux-x64-standalone-server-tar-gz',
+    packageId: 'linux-x64-standalone-server-tar-gz',
+    profileBinding: 'fixed',
+    deploymentProfile: 'standalone',
+    runtimeTarget: 'server',
+  };
+  const sourceCommit = '0123456789abcdef0123456789abcdef01234567';
+  await mkdir(path.dirname(path.resolve(artifactPath)), { recursive: true });
+  await writeFile(artifactPath, 'immutable-package-bytes', 'utf8');
+
+  const created = await createArtifactEvidence({
+    outputPath: evidencePath,
+    artifactPath,
+    matrixItem,
+    version: '1.2.3',
+    sourceCommit,
+    sbom: 'demo.cdx.json',
+    provenance: 'demo.intoto.jsonl',
+    signature: 'demo.sig',
+  });
+  assert.match(created.evidence.digest, /^sha256:[a-f0-9]{64}$/u);
+  assert.equal(created.evidence.artifactPath, artifactPath);
+  await verifyArtifactEvidence(evidencePath, matrixItem, {
+    artifactRoot: '.',
+    expectedVersion: '1.2.3',
+    expectedSourceCommit: sourceCommit,
+  });
+  await assert.rejects(
+    () => verifyArtifactEvidence(evidencePath, matrixItem, {
+      artifactRoot: '.',
+      expectedVersion: '1.2.4',
+      expectedSourceCommit: sourceCommit,
+    }),
+    /version does not match/u,
+  );
+  await writeFile(artifactPath, 'mutated-package-bytes', 'utf8');
+  await assert.rejects(
+    () => verifyArtifactEvidence(evidencePath, matrixItem, {
+      artifactRoot: '.',
+      expectedVersion: '1.2.3',
+      expectedSourceCommit: sourceCommit,
+    }),
+    /digest does not match packaged artifact bytes/u,
+  );
+});
+
+test('evidence:create CLI writes evidence that the verify CLI accepts', async () => {
+  const root = 'tmp/tests/sdkwork-workflow/evidence-cli';
+  const configPath = `${root}/sdkwork.workflow.json`;
+  const artifactPath = `${root}/demo.tar.gz`;
+  const evidencePath = `${root}/demo.json`;
+  const sourceCommit = 'abcdef0123456789abcdef0123456789abcdef01';
+  await mkdir(root, { recursive: true });
+  await writeFile(artifactPath, 'cli-package-bytes', 'utf8');
+  await writeFile(configPath, JSON.stringify({
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'evidence-cli', repository: 'Org/evidence-cli' },
+    release: { artifactPrefix: 'evidence-cli', defaultVersion: '2.0.0' },
+    targets: [{
+      id: 'linux-x64-standalone-server-tar-gz',
+      profileBinding: 'fixed',
+      deploymentProfile: 'standalone',
+      runtimeTarget: 'server',
+      profile: 'server',
+      platform: 'linux',
+      architecture: 'x64',
+      formats: ['tar.gz'],
+      runner: 'ubuntu-24.04',
+      outputGlobs: [`${root}/*.tar.gz`],
+      artifactPath,
+    }],
+  }, null, 2));
+
+  const commonArgs = [
+    '--config', configPath,
+    '--target-id', 'linux-x64-standalone-server-tar-gz',
+    '--deployment-profile', 'standalone',
+    '--version', '2.0.0',
+    '--source-commit', sourceCommit,
+    '--artifact-root', '.',
+    '--artifact-evidence', evidencePath,
+  ];
+  assert.equal(await main([
+    'evidence:create',
+    ...commonArgs,
+    '--artifact', artifactPath,
+    '--sbom', 'demo.cdx.json',
+    '--provenance', 'demo.intoto.jsonl',
+    '--signature', 'demo.sig',
+  ]), 0);
+  assert.equal(await main(['evidence', ...commonArgs]), 0);
+  const envEvidencePath = `${root}/demo-from-env.json`;
+  assert.equal(await main([
+    'evidence:create',
+    '--config', configPath,
+    '--source-commit', sourceCommit,
+  ], {
+    SDKWORK_PACKAGE_TARGET_ID: 'linux-x64-standalone-server-tar-gz',
+    SDKWORK_PACKAGE_VERSION: '2.0.0',
+    SDKWORK_PACKAGE_ARTIFACT_PATH: artifactPath,
+    SDKWORK_ARTIFACT_EVIDENCE_PATH: envEvidencePath,
+    SDKWORK_SBOM_REFERENCE: 'demo.cdx.json',
+    SDKWORK_PROVENANCE_REFERENCE: 'demo.intoto.jsonl',
+    SDKWORK_SIGNATURE_REFERENCE: 'demo.sig',
+  }), 0);
+});
+
+test('keeps non-deployable test evidence out of deployment and profile publication selectors', () => {
+  const baseConfig = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'test-evidence', repository: 'Org/test-evidence' },
+    release: { artifactPrefix: 'test-evidence' },
+    targets: [
+      {
+        id: 'test-noarch-test-test-zip',
+        profileBinding: 'non-deployable',
+        runtimeTarget: 'test-runner',
+        profile: 'test',
+        platform: 'test',
+        architecture: 'noarch',
+        formats: ['zip'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/test/*.zip'],
+      },
+    ],
+  };
+
+  assert.deepEqual(validateWorkflowConfig(baseConfig), []);
+  const matrix = createPackageMatrix(baseConfig);
+  assert.equal(matrix.include[0].packageId, 'test-noarch-test-test-zip');
+  assert.equal(matrix.include[0].deployable, false);
+  assert.equal(matrix.include[0].workflowArtifactName, 'sdkwork-non-deployable-test-evidence-test-noarch-test-test-zip');
+  assert.deepEqual(matrix.include[0].artifactEvidencePaths, []);
+  assert.deepEqual(matrix.include[0].artifactUploadGlobs, ['dist/test/*.zip']);
+  assert.equal(createWorkflowSummary(baseConfig, matrix).publishableTargets, 0);
+  assert.throws(
+    () => createPackageMatrix(baseConfig, { deploymentProfile: 'standalone' }),
+    /No package targets selected/u,
+  );
+
+  const withDeployment = {
+    ...baseConfig,
+    deployments: [{ id: 'invalid-test-deploy', environment: 'test', profile: 'test' }],
+  };
+  assert.ok(validateWorkflowConfig(withDeployment).some((issue) => issue.includes('does not match any package target')));
+});
+
+test('rejects invalid runtime-configurable and non-deployable target bindings', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'bad-bindings', repository: 'Org/bad-bindings' },
+    release: { artifactPrefix: 'bad-bindings' },
+    targets: [
+      {
+        id: 'linux-x64-dual-server-tar-gz',
+        profileBinding: 'runtime-configurable',
+        supportedDeploymentProfiles: ['standalone', 'cloud'],
+        defaultDeploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+      {
+        id: 'test-noarch-test-test-zip',
+        profileBinding: 'non-deployable',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'browser',
+        profile: 'test',
+        platform: 'test',
+        architecture: 'noarch',
+        formats: ['zip'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/test/*.zip'],
+      },
+    ],
+  };
+
+  const issues = validateWorkflowConfig(config);
+  assert.ok(issues.some((issue) => issue.includes('client runtime target')));
+  assert.ok(issues.some((issue) => issue.includes('must be omitted for non-deployable')));
+  assert.ok(issues.some((issue) => issue.includes('must be test-runner')));
 });
 
 test('rejects deployment, runtime target, and package profile axis mixups', () => {
@@ -715,7 +1028,9 @@ test('rejects format-suffixed target ids for multi-format targets', () => {
     targets: [
       {
         id: 'windows-x64-standalone-desktop-msi',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
+        deployable: true,
         runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
@@ -1504,6 +1819,7 @@ test('summarizes publication and supply chain policy for reusable workflow jobs'
     githubRelease: false,
     aggregateRelease: true,
     aggregateArtifactPath: 'release-assets',
+    aggregateArtifactPattern: 'sdkwork-publishable-*',
     aggregateUploadGlobs: ['release-assets/**/*'],
     aggregateUploadGlobsText: 'release-assets/**/*',
     retentionDays: 7,
@@ -1569,7 +1885,9 @@ test('creates a GitHub Actions matrix filtered by platform, architecture, profil
     include: [
       {
         id: 'windows-x64-standalone-desktop-msi',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
+        deployable: true,
         runtimeTarget: 'desktop',
         profile: 'desktop',
         platform: 'windows',
@@ -1578,6 +1896,14 @@ test('creates a GitHub Actions matrix filtered by platform, architecture, profil
         runner: 'windows-2022',
         packageId: 'windows-x64-standalone-desktop-msi',
         artifactName: 'demo-windows-x64-standalone-desktop-msi',
+        workflowArtifactName: 'sdkwork-publishable-demo-windows-x64-standalone-desktop-msi',
+        artifactEvidencePaths: ['.sdkwork/evidence/windows-x64-standalone-desktop-msi.json'],
+        artifactEvidencePathsText: '.sdkwork/evidence/windows-x64-standalone-desktop-msi.json',
+        artifactUploadGlobs: [
+          '.sdkwork/evidence/windows-x64-standalone-desktop-msi.json',
+          'dist/*.msi',
+        ],
+        artifactUploadGlobsText: '.sdkwork/evidence/windows-x64-standalone-desktop-msi.json\ndist/*.msi',
         outputGlobs: ['dist/*.msi'],
         outputGlobsText: 'dist/*.msi',
       },
@@ -2131,6 +2457,8 @@ test('creates deployment matrix from declared environments and selected package 
         targetId: 'linux-x64-standalone-server-tar-gz',
         packageId: 'linux-x64-standalone-server-tar-gz',
         deploymentProfile: 'standalone',
+        profileBinding: 'fixed',
+        artifactEvidencePath: '.sdkwork/evidence/linux-x64-standalone-server-tar-gz.json',
         runtimeTarget: 'server',
         profile: 'server',
         platform: 'linux',
@@ -2234,6 +2562,7 @@ test('creates lifecycle command plan with target environment', () => {
         formats: ['tar.gz'],
         runner: 'ubuntu-24.04',
         outputGlobs: ['dist/*.tar.gz'],
+        artifactPath: 'dist/demo.tar.gz',
       },
     ],
   };
@@ -2258,6 +2587,7 @@ test('creates lifecycle command plan with target environment', () => {
           SDKWORK_APP_ID: 'demo',
           SDKWORK_APP_REPOSITORY: 'Org/demo',
           SDKWORK_APP_SOURCE_PATH: 'apps/demo',
+          SDKWORK_WORKFLOW_CLI: path.resolve('scripts/sdkwork-workflow.mjs'),
           SDKWORK_DEPLOYMENT_PROFILE: 'standalone',
           SDKWORK_RUNTIME_TARGET: 'server',
           SDKWORK_PACKAGE_ARCHITECTURE: 'x64',
@@ -2266,8 +2596,10 @@ test('creates lifecycle command plan with target environment', () => {
           SDKWORK_PACKAGE_PLATFORM: 'linux',
           SDKWORK_PACKAGE_PROFILE: 'server',
           SDKWORK_PACKAGE_TARGET_ID: 'linux-x64-standalone-server-tar-gz',
+          SDKWORK_PACKAGE_ARTIFACT_PATH: 'dist/demo.tar.gz',
           SDKWORK_PACKAGE_VERSION: '9.9.9',
           SDKWORK_RELEASE_TAG: 'v9.9.9',
+          SDKWORK_ARTIFACT_EVIDENCE_PATHS: '.sdkwork/evidence/linux-x64-standalone-server-tar-gz.json',
         },
       },
     ],
@@ -2724,11 +3056,13 @@ test('reusable workflow gates publication policies and passes deployment context
   const workflow = await readFile('.github/workflows/sdkwork-package.yml', 'utf8');
 
   assert.match(workflow, /if: \$\{\{ inputs\.upload_artifact && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.workflowArtifact \}\}/u);
+  assert.match(workflow, /name: \$\{\{ matrix\.workflowArtifactName \}\}-\$\{\{ inputs\.tag \|\| github\.run_number \}\}/u);
+  assert.match(workflow, /path: \$\{\{ matrix\.artifactUploadGlobsText \}\}/u);
   assert.match(workflow, /retention-days: \$\{\{ fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.retentionDays \|\| inputs\.retention_days \}\}/u);
   assert.match(workflow, /if: \$\{\{ fromJson\(needs\.plan\.outputs\.summary_json\)\.security\.artifactAttestations \}\}/u);
   assert.match(
     workflow,
-    /if: \$\{\{ inputs\.publish_release && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease && !fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateRelease \}\}/u,
+    /if: \$\{\{ inputs\.publish_release && matrix\.deployable && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease && !fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateRelease \}\}/u,
   );
   assert.match(workflow, /name: Render release changelog/u);
   assert.match(workflow, /notes-file: \$\{\{ steps\.changelog\.outputs\.notes_path \}\}/u);
@@ -2740,10 +3074,21 @@ test('reusable workflow gates publication policies and passes deployment context
   assert.match(workflow, /--deployment-profile "\$\{SDKWORK_FILTER_DEPLOYMENT_PROFILE\}"/u);
   assert.match(workflow, /--runtime-target "\$\{SDKWORK_FILTER_RUNTIME_TARGET\}"/u);
   assert.match(workflow, /SDKWORK_DEPLOYMENT_PROFILE: \$\{\{ matrix\.deploymentProfile \}\}/u);
+  assert.match(workflow, /SDKWORK_SUPPORTED_DEPLOYMENT_PROFILES: \$\{\{ join\(matrix\.supportedDeploymentProfiles, ','\) \}\}/u);
+  assert.match(workflow, /SDKWORK_ARTIFACT_EVIDENCE_PATH: \$\{\{ format\('\.sdkwork\/artifacts\/\{0\}', matrix\.artifactEvidencePath\) \}\}/u);
+  assert.match(workflow, /name: Verify artifact evidence/u);
+  assert.match(workflow, /name: Verify package artifact evidence/u);
+  assert.match(workflow, /SDKWORK_ARTIFACT_EVIDENCE_PATHS: \$\{\{ matrix\.artifactEvidencePathsText \}\}/u);
+  assert.match(workflow, /sdkwork-workflow\.mjs evidence/u);
+  assert.match(workflow, /--artifact-evidence "\$\{SDKWORK_ARTIFACT_EVIDENCE_INPUT\}"/u);
   assert.match(workflow, /SDKWORK_RUNTIME_TARGET: \$\{\{ matrix\.runtimeTarget \}\}/u);
   assert.match(workflow, /deployment-profile: \$\{\{ matrix\.deploymentProfile \}\}/u);
   assert.match(workflow, /runtime-target: \$\{\{ matrix\.runtimeTarget \}\}/u);
   assert.match(workflow, /SDKWORK_PACKAGE_VARIANT: \$\{\{ matrix\.variant \}\}/u);
+  assert.match(workflow, /name: Require package artifacts for deployment/u);
+  assert.match(workflow, /inputs\.deploy && \(!inputs\.upload_artifact \|\| !fromJson\(steps\.matrix\.outputs\.summary_json\)\.publish\.workflowArtifact\)/u);
+  assert.match(workflow, /name: Require a selected deployment/u);
+  assert.match(workflow, /inputs\.deploy && steps\.deployments\.outputs\.deployment_count == '0'/u);
 });
 
 test('run-lifecycle action passes deployment profile and runtime target filters through environment variables', async () => {
@@ -2765,17 +3110,20 @@ test('reusable workflow supports aggregate GitHub Release publication', async ()
   assert.match(workflow, /aggregateRelease/u);
   assert.match(
     workflow,
-    /if: \$\{\{ inputs\.publish_release && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease && !fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateRelease \}\}/u,
+    /if: \$\{\{ inputs\.publish_release && matrix\.deployable && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease && !fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateRelease \}\}/u,
   );
   assert.match(workflow, /\n  publish:\n    name: Publish aggregate GitHub release/u);
   assert.match(
     workflow,
-    /if: \$\{\{ inputs\.publish_release && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateRelease \}\}/u,
+    /if: \$\{\{ inputs\.publish_release && fromJson\(needs\.plan\.outputs\.summary_json\)\.publishableTargets > 0 && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.githubRelease && fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateRelease \}\}/u,
   );
   assert.match(workflow, /uses: actions\/download-artifact@v4/u);
+  assert.match(workflow, /pattern: \$\{\{ fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateArtifactPattern \}\}/u);
+  assert.match(workflow, /pattern: 'sdkwork-publishable-\*\$\{\{ matrix\.packageId \}\}\*'/u);
   assert.match(workflow, /path: \$\{\{ fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateArtifactPath \}\}/u);
   assert.match(workflow, /phase: publish/u);
   assert.match(workflow, /aggregate-release: 'true'/u);
+  assert.match(workflow, /name: Require package artifacts for aggregate release/u);
   assert.match(workflow, /files: \$\{\{ fromJson\(needs\.plan\.outputs\.summary_json\)\.publish\.aggregateUploadGlobsText \}\}/u);
 });
 

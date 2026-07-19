@@ -1,11 +1,12 @@
-# Component Specs
+# SDKWork GitHub Workflow Specs
 
-This directory is the local SDKWork component contract for `@sdkwork/github-workflow`.
+This directory contains the machine-readable component contract for the shared
+SDKWork packaging, publication, and deployment workflow framework.
 
-- Component root: `sdkwork-github-workflow`
-- Canonical standards: `../sdkwork-specs/README.md`
-- Machine-readable contract: `specs/component.spec.json`
+- `component.spec.json` declares component identity, public entrypoints,
+  canonical standards, and verification commands.
+- `../schemas/sdkwork-workflow.schema.json` remains the application workflow
+  configuration schema.
 
-Read `specs/component.spec.json` before changing this component's public exports, runtime entrypoints, SDK clients, generated artifacts, config keys, or verification commands.
-
-Do not copy root standards into this directory. Link to files under `../sdkwork-specs/` instead.
+Global rules remain authoritative in `../../sdkwork-specs/`; this directory
+links to those standards and does not copy their normative bodies.

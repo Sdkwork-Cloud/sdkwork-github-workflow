@@ -202,6 +202,27 @@ jobs:
             --format "${SDKWORK_FILTER_FORMAT}" \
             --github-output
 
+      - name: Require package artifacts for deployment
+        if: ${{ inputs.deploy && (!inputs.upload_artifact || !fromJson(steps.matrix.outputs.summary_json).publish.workflowArtifact) }}
+        shell: bash
+        run: |
+          echo "Deployment requires workflow artifact upload from the selected package jobs." >&2
+          exit 1
+
+      - name: Require a selected deployment
+        if: ${{ inputs.deploy && steps.deployments.outputs.deployment_count == '0' }}
+        shell: bash
+        run: |
+          echo "Deployment was requested but no deployment matched the selected package matrix." >&2
+          exit 1
+
+      - name: Require package artifacts for aggregate release
+        if: ${{ inputs.publish_release && fromJson(steps.matrix.outputs.summary_json).publish.aggregateRelease && (!inputs.upload_artifact || !fromJson(steps.matrix.outputs.summary_json).publish.workflowArtifact) }}
+        shell: bash
+        run: |
+          echo "Aggregate release requires workflow artifact upload from package jobs." >&2
+          exit 1
+
   package:
     name: Package ${{ matrix.packageId }}
     needs: plan
@@ -217,6 +238,7 @@ jobs:
       SDKWORK_PACKAGE_ID: ${{ matrix.packageId }}
       SDKWORK_PACKAGE_TARGET_ID: ${{ matrix.id }}
       SDKWORK_DEPLOYMENT_PROFILE: ${{ matrix.deploymentProfile }}
+      SDKWORK_SUPPORTED_DEPLOYMENT_PROFILES: ${{ join(matrix.supportedDeploymentProfiles, ',') }}
       SDKWORK_RUNTIME_TARGET: ${{ matrix.runtimeTarget }}
       SDKWORK_PACKAGE_PROFILE: ${{ matrix.profile }}
       SDKWORK_PACKAGE_PLATFORM: ${{ matrix.platform }}
@@ -376,12 +398,50 @@ jobs:
           version: ${{ inputs.package_version }}
           release-tag: ${{ inputs.tag || github.ref_name }}
 
+      - name: Verify package artifact evidence
+        if: ${{ matrix.deployable }}
+        shell: bash
+        env:
+          SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_TARGET_ID: ${{ matrix.id }}
+          SDKWORK_TARGET_DEPLOYMENT_PROFILE: ${{ matrix.deploymentProfile }}
+          SDKWORK_TARGET_RUNTIME_TARGET: ${{ matrix.runtimeTarget }}
+          SDKWORK_TARGET_PLATFORM: ${{ matrix.platform }}
+          SDKWORK_TARGET_ARCHITECTURE: ${{ matrix.architecture }}
+          SDKWORK_TARGET_PROFILE: ${{ matrix.profile }}
+          SDKWORK_TARGET_FORMAT: ${{ matrix.format }}
+          SDKWORK_PACKAGE_VERSION_INPUT: ${{ inputs.package_version }}
+          SDKWORK_RELEASE_TAG_INPUT: ${{ inputs.tag || github.ref_name }}
+          SDKWORK_ARTIFACT_EVIDENCE_PATHS: ${{ matrix.artifactEvidencePathsText }}
+        run: |
+          set -euo pipefail
+          SDKWORK_SOURCE_COMMIT="$(git rev-parse HEAD)"
+          while IFS= read -r evidence_path; do
+            if [ -z "${evidence_path}" ]; then
+              continue
+            fi
+            node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs evidence \
+              --config "${SDKWORK_CONFIG_PATH}" \
+              --target-id "${SDKWORK_TARGET_ID}" \
+              --deployment-profile "${SDKWORK_TARGET_DEPLOYMENT_PROFILE}" \
+              --runtime-target "${SDKWORK_TARGET_RUNTIME_TARGET}" \
+              --platform "${SDKWORK_TARGET_PLATFORM}" \
+              --architecture "${SDKWORK_TARGET_ARCHITECTURE}" \
+              --profile "${SDKWORK_TARGET_PROFILE}" \
+              --format "${SDKWORK_TARGET_FORMAT}" \
+              --version "${SDKWORK_PACKAGE_VERSION_INPUT}" \
+              --release-tag "${SDKWORK_RELEASE_TAG_INPUT}" \
+              --source-commit "${SDKWORK_SOURCE_COMMIT}" \
+              --artifact-root . \
+              --artifact-evidence "${evidence_path}"
+          done <<< "${SDKWORK_ARTIFACT_EVIDENCE_PATHS}"
+
       - name: Upload workflow artifact
         if: ${{ inputs.upload_artifact && fromJson(needs.plan.outputs.summary_json).publish.workflowArtifact }}
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifactName }}-${{ inputs.tag || github.run_number }}
-          path: ${{ matrix.outputGlobsText }}
+          name: ${{ matrix.workflowArtifactName }}-${{ inputs.tag || github.run_number }}
+          path: ${{ matrix.artifactUploadGlobsText }}
           if-no-files-found: error
           retention-days: ${{ fromJson(needs.plan.outputs.summary_json).publish.retentionDays || inputs.retention_days }}
 
@@ -393,7 +453,7 @@ jobs:
 
       - id: changelog
         name: Render release changelog
-        if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease && !fromJson(needs.plan.outputs.summary_json).publish.aggregateRelease }}
+        if: ${{ inputs.publish_release && matrix.deployable && fromJson(needs.plan.outputs.summary_json).publish.githubRelease && !fromJson(needs.plan.outputs.summary_json).publish.aggregateRelease }}
         shell: bash
         env:
           SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
@@ -423,12 +483,12 @@ jobs:
             --github-output
 
       - name: Upload assets to GitHub Release
-        if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease && !fromJson(needs.plan.outputs.summary_json).publish.aggregateRelease }}
+        if: ${{ inputs.publish_release && matrix.deployable && fromJson(needs.plan.outputs.summary_json).publish.githubRelease && !fromJson(needs.plan.outputs.summary_json).publish.aggregateRelease }}
         uses: ./.sdkwork/github-workflow/actions/publish-release
         with:
           tag: ${{ inputs.tag || github.ref_name }}
           repository: ${{ github.repository }}
-          files: ${{ matrix.outputGlobsText }}
+          files: ${{ matrix.artifactUploadGlobsText }}
           notes-file: ${{ steps.changelog.outputs.notes_path }}
           clobber: 'true'
         env:
@@ -439,7 +499,7 @@ jobs:
     needs:
       - plan
       - package
-    if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publish.githubRelease && fromJson(needs.plan.outputs.summary_json).publish.aggregateRelease }}
+    if: ${{ inputs.publish_release && fromJson(needs.plan.outputs.summary_json).publishableTargets > 0 && fromJson(needs.plan.outputs.summary_json).publish.githubRelease && fromJson(needs.plan.outputs.summary_json).publish.aggregateRelease }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -478,7 +538,7 @@ jobs:
       - name: Download aggregate package artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*'
+          pattern: ${{ fromJson(needs.plan.outputs.summary_json).publish.aggregateArtifactPattern }}
           path: ${{ fromJson(needs.plan.outputs.summary_json).publish.aggregateArtifactPath }}
           merge-multiple: true
 
@@ -559,6 +619,7 @@ jobs:
       SDKWORK_PACKAGE_ID: ${{ matrix.packageId }}
       SDKWORK_PACKAGE_TARGET_ID: ${{ matrix.targetId }}
       SDKWORK_DEPLOYMENT_PROFILE: ${{ matrix.deploymentProfile }}
+      SDKWORK_SUPPORTED_DEPLOYMENT_PROFILES: ${{ join(matrix.supportedDeploymentProfiles, ',') }}
       SDKWORK_RUNTIME_TARGET: ${{ matrix.runtimeTarget }}
       SDKWORK_PACKAGE_PROFILE: ${{ matrix.profile }}
       SDKWORK_PACKAGE_PLATFORM: ${{ matrix.platform }}
@@ -567,6 +628,7 @@ jobs:
       SDKWORK_PACKAGE_FORMAT: ${{ matrix.format }}
       SDKWORK_DEPLOY_ENVIRONMENT: ${{ matrix.environment }}
       SDKWORK_DEPLOY_URL: ${{ matrix.url }}
+      SDKWORK_ARTIFACT_EVIDENCE_PATH: ${{ format('.sdkwork/artifacts/{0}', matrix.artifactEvidencePath) }}
       GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
     steps:
       - name: Checkout application source
@@ -594,9 +656,41 @@ jobs:
       - name: Download package artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*${{ matrix.packageId }}*'
+          pattern: 'sdkwork-publishable-*${{ matrix.packageId }}*'
           path: .sdkwork/artifacts
           merge-multiple: true
+
+      - name: Verify artifact evidence
+        if: ${{ matrix.artifactEvidencePath != '' }}
+        shell: bash
+        env:
+          SDKWORK_CONFIG_PATH: ${{ inputs.config_path }}
+          SDKWORK_TARGET_ID: ${{ matrix.targetId }}
+          SDKWORK_TARGET_DEPLOYMENT_PROFILE: ${{ matrix.deploymentProfile }}
+          SDKWORK_TARGET_RUNTIME_TARGET: ${{ matrix.runtimeTarget }}
+          SDKWORK_TARGET_PLATFORM: ${{ matrix.platform }}
+          SDKWORK_TARGET_ARCHITECTURE: ${{ matrix.architecture }}
+          SDKWORK_TARGET_PROFILE: ${{ matrix.profile }}
+          SDKWORK_TARGET_FORMAT: ${{ matrix.format }}
+          SDKWORK_DEPLOY_ENVIRONMENT_INPUT: ${{ matrix.environment }}
+          SDKWORK_ARTIFACT_EVIDENCE_INPUT: ${{ format('.sdkwork/artifacts/{0}', matrix.artifactEvidencePath) }}
+        run: |
+          set -euo pipefail
+          node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs evidence \
+            --config "${SDKWORK_CONFIG_PATH}" \
+            --target-id "${SDKWORK_TARGET_ID}" \
+            --deployment-profile "${SDKWORK_TARGET_DEPLOYMENT_PROFILE}" \
+            --runtime-target "${SDKWORK_TARGET_RUNTIME_TARGET}" \
+            --platform "${SDKWORK_TARGET_PLATFORM}" \
+            --architecture "${SDKWORK_TARGET_ARCHITECTURE}" \
+            --profile "${SDKWORK_TARGET_PROFILE}" \
+            --format "${SDKWORK_TARGET_FORMAT}" \
+            --deploy-environment "${SDKWORK_DEPLOY_ENVIRONMENT_INPUT}" \
+            --version "${SDKWORK_PACKAGE_VERSION}" \
+            --release-tag "${SDKWORK_RELEASE_TAG}" \
+            --source-commit "$(git rev-parse HEAD)" \
+            --artifact-root .sdkwork/artifacts \
+            --artifact-evidence "${SDKWORK_ARTIFACT_EVIDENCE_INPUT}"
 
       - name: Run deployment lifecycle
         uses: ./.sdkwork/github-workflow/actions/run-lifecycle

@@ -11,6 +11,31 @@ The framework keeps application repositories thin:
 
 This repository implements the SDKWork standard in `../sdkwork-specs/GITHUB_WORKFLOW_SPEC.md`.
 
+The framework also owns immutable artifact evidence plumbing. Deployable package
+targets must publish an evidence JSON document with `artifactPath`, the actual
+`sha256:` digest of that file, the selected SemVer/source commit, package/profile
+binding, and SBOM/provenance/signature references. Use
+`sdkwork-workflow evidence:create` from an application lifecycle hook to create
+the document, then let the reusable workflow verify it before upload and again
+before deployment.
+
+```bash
+node "$SDKWORK_WORKFLOW_CLI" evidence:create \
+  --config sdkwork.workflow.json \
+  --target-id "$SDKWORK_PACKAGE_TARGET_ID" \
+  --deployment-profile "$SDKWORK_DEPLOYMENT_PROFILE" \
+  --version "$SDKWORK_PACKAGE_VERSION" \
+  --artifact dist/my-app.tar.gz \
+  --artifact-evidence .sdkwork/evidence/linux-x64-standalone-server-tar-gz.json \
+  --sbom dist/my-app.cdx.json \
+  --provenance dist/my-app.intoto.jsonl \
+  --signature dist/my-app.sig
+```
+
+Lifecycle steps receive `SDKWORK_WORKFLOW_CLI` and the newline-delimited
+`SDKWORK_ARTIFACT_EVIDENCE_PATHS`, so the same hook works from a sibling
+workspace dependency, an installed package, or the reusable workflow checkout.
+
 ## Design Goals
 
 - One standard packaging contract for all SDKWork applications.
@@ -32,6 +57,7 @@ This repository implements the SDKWork standard in `../sdkwork-specs/GITHUB_WORK
 - `actions/publish-release` - composite action for GitHub Release asset publishing.
 - `scripts/sdkwork-workflow.mjs` - zero-dependency Node CLI and library for validation, matrix planning, dependency planning, changelog rendering, and lifecycle execution.
 - `schemas/sdkwork-workflow.schema.json` - JSON Schema for `sdkwork.workflow.json`.
+- `specs/component.spec.json` - machine-readable shared framework component contract.
 - `templates/app-package.workflow.yml` - minimal workflow entrypoint for application repositories.
 - `examples/sdkwork-clawrouter` - migration example based on the original `sdkwork-clawrouter` workflow.
 - `examples/mobile-flutter` - mobile packaging example.
@@ -96,6 +122,7 @@ Add `sdkwork.workflow.json` to the application repository:
   "targets": [
     {
       "id": "linux-x64-standalone-server-tar-gz",
+      "profileBinding": "fixed",
       "deploymentProfile": "standalone",
       "runtimeTarget": "server",
       "profile": "server",
@@ -103,11 +130,38 @@ Add `sdkwork.workflow.json` to the application repository:
       "architecture": "x64",
       "formats": ["tar.gz"],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["dist/*.tar.gz", "dist/*.manifest.json"]
+      "outputGlobs": ["dist/demo.tar.gz", "dist/demo.cdx.json"],
+      "artifactPath": "dist/demo.tar.gz"
     }
   ]
 }
 ```
+
+### Target Profile Bindings
+
+Every new target declares one `profileBinding`:
+
+| Binding | Required fields | Package token | Deployment behavior |
+| --- | --- | --- | --- |
+| `fixed` | `deploymentProfile: standalone|cloud` | `standalone` or `cloud` | One immutable server/gateway/container/client profile |
+| `runtime-configurable` | `supportedDeploymentProfiles: [standalone, cloud]`, `defaultDeploymentProfile` | `dual` | One client artifact; deployment selects one active profile |
+| `non-deployable` | `runtimeTarget: test-runner` | `test` | Test/evidence target only; excluded from publish and deploy selectors |
+
+During the migration window, a target that omits `profileBinding` but declares
+`deploymentProfile` is inferred as `fixed`. Generated configuration always
+emits the explicit binding. Runtime-configurable targets are limited to
+developer-facing browser, desktop, tablet, H5/Capacitor, Flutter, native
+mobile, Harmony, and mini-program clients. Server, gateway, worker, and
+container targets remain fixed.
+
+For a runtime-configurable target, selecting `--deployment-profile cloud`
+changes the active lifecycle profile but never changes the `dual` package id.
+Deployments must carry an immutable artifact evidence document. The framework
+defaults to `.sdkwork/evidence/{packageId}.json`; an application may configure
+another safe relative template with `deployments[].artifactEvidencePath` using
+`{packageId}` or `{targetId}`. The deploy job downloads the selected package,
+validates the evidence before lifecycle side effects, and exposes the verified
+path through `SDKWORK_ARTIFACT_EVIDENCE_PATH`.
 
 Package matrix items use one canonical package id:
 
@@ -130,6 +184,12 @@ When one platform produces installer formats with different file globs, declare 
 ```text
 <artifactPrefix>-<package-id>
 ```
+
+Workflow artifact storage names add a framework-owned scope prefix:
+`sdkwork-publishable-<artifactPrefix>-<package-id>` for deployable/release
+artifacts and `sdkwork-non-deployable-<artifactPrefix>-<package-id>` for test
+evidence. Aggregate Release jobs download only the publishable prefix, so test
+outputs cannot enter a release through a wildcard artifact selector.
 
 Examples:
 

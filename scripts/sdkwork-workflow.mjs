@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { createReadStream, existsSync, realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
@@ -9,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const SCHEMA_VERSION = '2026-06-06.sdkwork.workflow.v1';
 const SUPPORTED_DEPLOYMENT_PROFILES = Object.freeze(['standalone', 'cloud']);
+const SUPPORTED_PROFILE_BINDINGS = Object.freeze(['fixed', 'runtime-configurable', 'non-deployable']);
 const SUPPORTED_RUNTIME_TARGETS = Object.freeze([
   'browser',
   'desktop',
@@ -125,6 +127,20 @@ const PROFILE_RUNTIME_TARGETS = Object.freeze({
   library: ['browser', 'server', 'container', 'test-runner'],
   test: ['test-runner'],
 });
+const RUNTIME_CONFIGURABLE_RUNTIME_TARGETS = Object.freeze([
+  'browser',
+  'desktop',
+  'tablet-ipados',
+  'tablet-android',
+  'capacitor-ios',
+  'capacitor-android',
+  'flutter-ios',
+  'flutter-android',
+  'android-native',
+  'ios-native',
+  'harmony-native',
+  'mini-program',
+]);
 const SECRET_VALUE_PATTERNS = Object.freeze([
   /^gh[pousr]_[0-9A-Za-z_]{8,}$/u,
   /^github_pat_[0-9A-Za-z_]+$/u,
@@ -172,7 +188,10 @@ const LIFECYCLE_STEP_KEYS = Object.freeze(['name', 'run', 'shell', 'workingDirec
 const TARGET_CONFIG_KEYS = Object.freeze([
   'id',
   'packageId',
+  'profileBinding',
   'deploymentProfile',
+  'supportedDeploymentProfiles',
+  'defaultDeploymentProfile',
   'runtimeTarget',
   'profile',
   'platform',
@@ -182,6 +201,7 @@ const TARGET_CONFIG_KEYS = Object.freeze([
   'formats',
   'runner',
   'outputGlobs',
+  'artifactPath',
   'environment',
   'signing',
 ]);
@@ -208,11 +228,14 @@ const DEPLOYMENT_CONFIG_KEYS = Object.freeze([
   'format',
   'targetId',
   'packageId',
+  'artifactEvidencePath',
   'lifecycle',
 ]);
 const CHANGELOG_CONFIG_KEYS = Object.freeze(['enabled', 'source', 'path', 'includeCommitSubjects', 'maxCommitSubjects']);
 const SUPPORTED_CHANGELOG_SOURCES = Object.freeze(['auto', 'app-manifest', 'file', 'git', 'none']);
 const FRAMEWORK_CHECKOUT_PATH = '.sdkwork/github-workflow';
+const WORKFLOW_ARTIFACT_PREFIX = 'sdkwork';
+const WORKFLOW_CLI_PATH = fileURLToPath(import.meta.url);
 
 function printHelp() {
   console.log(`Usage: node scripts/sdkwork-workflow.mjs <command> [options]
@@ -225,6 +248,8 @@ Commands:
   toolchains     Render declared toolchain setup metadata.
   changelog      Render release changelog / GitHub Release notes.
   lifecycle      Render one lifecycle phase execution plan.
+  evidence       Verify artifact evidence against one selected package target.
+  evidence:create Create artifact evidence from a packaged file and references.
   init-app       Generate sdkwork.workflow.json and package workflow for an app.
 
 Options:
@@ -247,6 +272,15 @@ Options:
   --deploy-url <value>   Deployment URL exposed to lifecycle steps.
   --deploy-lifecycle <value>
                          Deployment lifecycle label exposed to lifecycle steps.
+  --artifact-evidence <path>
+                         Artifact evidence document for the evidence command.
+  --artifact <path>      Primary packaged artifact path relative to --artifact-root.
+  --artifact-root <path> Root directory containing the packaged artifact.
+  --artifact-id <value> Stable artifact identity for evidence:create.
+  --sbom <value>         SBOM reference for evidence:create.
+  --provenance <value>   Provenance reference for evidence:create.
+  --signature <value>    Signature reference for evidence:create.
+  --source-commit <sha>  Expected source commit for evidence validation/generation.
   --aggregate-release <true|false>
                          Use aggregate GitHub Release lifecycle context.
   --output <path>         Output path for changelog command.
@@ -288,6 +322,14 @@ function parseArgs(argv = process.argv.slice(2)) {
     deployEnvironment: null,
     deployUrl: null,
     deployLifecycle: null,
+    artifactEvidencePath: null,
+    artifactPath: null,
+    artifactRoot: '.',
+    artifactId: null,
+    sbomReference: null,
+    provenanceReference: null,
+    signatureReference: null,
+    sourceCommit: null,
     aggregateRelease: false,
     outputPath: '.sdkwork/release/release-notes.md',
     dependencyRefsJson: null,
@@ -367,6 +409,38 @@ function parseArgs(argv = process.argv.slice(2)) {
         break;
       case '--deploy-lifecycle':
         settings.deployLifecycle = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--artifact-evidence':
+        settings.artifactEvidencePath = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--artifact':
+        settings.artifactPath = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--artifact-root':
+        settings.artifactRoot = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--artifact-id':
+        settings.artifactId = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--sbom':
+        settings.sbomReference = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--provenance':
+        settings.provenanceReference = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--signature':
+        settings.signatureReference = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case '--source-commit':
+        settings.sourceCommit = requireValue(argv, index, arg);
         index += 1;
         break;
       case '--aggregate-release':
@@ -745,7 +819,7 @@ function validateTarget(target, index, issues, seenIds, seenPackageIds) {
     seenIds.add(target.id);
   }
   validateOptionalString(target?.packageId, `${label}.packageId`, issues, { pattern: PACKAGE_ID_PATTERN });
-  validateEnum(target?.deploymentProfile, `${label}.deploymentProfile`, SUPPORTED_DEPLOYMENT_PROFILES, issues);
+  validateTargetProfileBinding(target, label, issues);
   validateEnum(target?.runtimeTarget, `${label}.runtimeTarget`, SUPPORTED_RUNTIME_TARGETS, issues);
   validateEnum(target?.profile, `${label}.profile`, SUPPORTED_PROFILES, issues);
   validateEnum(target?.platform, `${label}.platform`, SUPPORTED_PLATFORMS, issues);
@@ -775,11 +849,77 @@ function validateTarget(target, index, issues, seenIds, seenPackageIds) {
       validateOutputGlob(glob, `${label}.outputGlobs[${globIndex}]`, issues)
     );
   }
+  validateOptionalSafeRelativePath(target?.artifactPath, `${label}.artifactPath`, issues);
   if (target?.environment !== undefined) {
     validateOptionalString(target.environment, `${label}.environment`, issues);
   }
   if (target?.signing !== undefined && typeof target.signing !== 'boolean') {
     issues.push(`${label}.signing must be a boolean`);
+  }
+}
+
+function targetProfileBinding(target) {
+  return target?.profileBinding ?? (target?.deploymentProfile ? 'fixed' : undefined);
+}
+
+function validateTargetProfileBinding(target, label, issues) {
+  const binding = targetProfileBinding(target);
+  if (!binding) {
+    issues.push(`${label}.deploymentProfile is required unless profileBinding is declared`);
+    return;
+  }
+  validateEnum(binding, `${label}.profileBinding`, SUPPORTED_PROFILE_BINDINGS, issues);
+  if (!SUPPORTED_PROFILE_BINDINGS.includes(binding)) {
+    return;
+  }
+
+  if (binding === 'fixed') {
+    validateEnum(target?.deploymentProfile, `${label}.deploymentProfile`, SUPPORTED_DEPLOYMENT_PROFILES, issues);
+    if (target?.supportedDeploymentProfiles !== undefined) {
+      issues.push(`${label}.supportedDeploymentProfiles must be omitted for fixed targets`);
+    }
+    if (target?.defaultDeploymentProfile !== undefined) {
+      issues.push(`${label}.defaultDeploymentProfile must be omitted for fixed targets`);
+    }
+    return;
+  }
+
+  if (target?.deploymentProfile !== undefined) {
+    issues.push(`${label}.deploymentProfile must be omitted for ${binding} targets`);
+  }
+
+  if (binding === 'runtime-configurable') {
+    validateArray(target?.supportedDeploymentProfiles, `${label}.supportedDeploymentProfiles`, issues, { minLength: 2 });
+    if (Array.isArray(target?.supportedDeploymentProfiles)) {
+      const supported = target.supportedDeploymentProfiles;
+      supported.forEach((profile, profileIndex) =>
+        validateEnum(profile, `${label}.supportedDeploymentProfiles[${profileIndex}]`, SUPPORTED_DEPLOYMENT_PROFILES, issues)
+      );
+      if (supported.length !== 2 || new Set(supported).size !== 2
+        || !SUPPORTED_DEPLOYMENT_PROFILES.every((profile) => supported.includes(profile))) {
+        issues.push(`${label}.supportedDeploymentProfiles must contain exactly standalone and cloud`);
+      }
+    }
+    validateEnum(target?.defaultDeploymentProfile, `${label}.defaultDeploymentProfile`, SUPPORTED_DEPLOYMENT_PROFILES, issues);
+    if (SUPPORTED_DEPLOYMENT_PROFILES.includes(target?.defaultDeploymentProfile)
+      && Array.isArray(target?.supportedDeploymentProfiles)
+      && !target.supportedDeploymentProfiles.includes(target.defaultDeploymentProfile)) {
+      issues.push(`${label}.defaultDeploymentProfile must be listed in supportedDeploymentProfiles`);
+    }
+    if (!RUNTIME_CONFIGURABLE_RUNTIME_TARGETS.includes(target?.runtimeTarget)) {
+      issues.push(`${label}.runtimeTarget must be a client runtime target for runtime-configurable binding`);
+    }
+    return;
+  }
+
+  if (target?.supportedDeploymentProfiles !== undefined) {
+    issues.push(`${label}.supportedDeploymentProfiles must be omitted for non-deployable targets`);
+  }
+  if (target?.defaultDeploymentProfile !== undefined) {
+    issues.push(`${label}.defaultDeploymentProfile must be omitted for non-deployable targets`);
+  }
+  if (target?.runtimeTarget !== 'test-runner') {
+    issues.push(`${label}.runtimeTarget must be test-runner for non-deployable binding`);
   }
 }
 
@@ -831,7 +971,7 @@ function validateTargetId(target, label, issues) {
     typeof target?.id !== 'string'
     || typeof target.platform !== 'string'
     || typeof target.architecture !== 'string'
-    || typeof target.deploymentProfile !== 'string'
+    || typeof targetProfileToken(target) !== 'string'
     || typeof target.profile !== 'string'
     || !Array.isArray(target.formats)
     || target.formats.length === 0
@@ -854,7 +994,7 @@ function validateTargetPackageId(target, label, issues) {
   if (
     typeof target.platform !== 'string'
     || typeof target.architecture !== 'string'
-    || typeof target.deploymentProfile !== 'string'
+    || typeof targetProfileToken(target) !== 'string'
     || typeof target.profile !== 'string'
     || !Array.isArray(target.formats)
     || target.formats.length === 0
@@ -878,7 +1018,7 @@ function validateUniquePackageIds(target, label, issues, seenPackageIds) {
   if (
     typeof target.platform !== 'string'
     || typeof target.architecture !== 'string'
-    || typeof target.deploymentProfile !== 'string'
+    || typeof targetProfileToken(target) !== 'string'
     || typeof target.profile !== 'string'
   ) {
     return;
@@ -942,6 +1082,13 @@ function validateDeployment(deployment, index, issues, seenIds) {
   if (deployment?.packageId !== undefined) {
     validateOptionalString(deployment.packageId, `${label}.packageId`, issues, { pattern: PACKAGE_ID_PATTERN });
   }
+  if (deployment?.artifactEvidencePath !== undefined) {
+    validateOptionalSafeRelativePath(deployment.artifactEvidencePath, `${label}.artifactEvidencePath`, issues);
+    const unsupportedPlaceholders = String(deployment.artifactEvidencePath).match(/\{(?!packageId\}|targetId\})[^}]+\}/gu);
+    if (unsupportedPlaceholders) {
+      issues.push(`${label}.artifactEvidencePath contains unsupported placeholders: ${unsupportedPlaceholders.join(', ')}`);
+    }
+  }
   if (deployment?.lifecycle !== undefined && !['deploy', 'publish'].includes(String(deployment.lifecycle))) {
     issues.push(`${label}.lifecycle must be deploy or publish`);
   }
@@ -970,7 +1117,10 @@ function deploymentMatchesAnyTarget(deployment, targets) {
       if (deploymentMatchesPackage(deployment, {
         id: target.id,
         packageId: packageIdForTarget(target, format),
+        profileBinding: targetProfileBinding(target),
         deploymentProfile: target.deploymentProfile,
+        supportedDeploymentProfiles: target.supportedDeploymentProfiles,
+        defaultDeploymentProfile: target.defaultDeploymentProfile,
         runtimeTarget: target.runtimeTarget,
         profile: target.profile,
         platform: target.platform,
@@ -1223,6 +1373,36 @@ function isSafeGitRef(value) {
   return text.split('/').every((part) => part !== '' && part !== '.' && part !== '..' && !part.endsWith('.lock'));
 }
 
+function artifactEvidencePathForPackage(deployment, packageItem) {
+  return (deployment?.artifactEvidencePath ?? `.sdkwork/evidence/${packageItem.packageId}.json`)
+    .replaceAll('{packageId}', packageItem.packageId)
+    .replaceAll('{targetId}', packageItem.id);
+}
+
+function artifactEvidencePathsForPackage(config, packageItem) {
+  if (packageItem.deployable === false) return [];
+  const matchingDeployments = (config.deployments ?? [])
+    .filter((deployment) => deploymentMatchesPackage(deployment, packageItem));
+  const paths = matchingDeployments.length > 0
+    ? matchingDeployments.map((deployment) => artifactEvidencePathForPackage(deployment, packageItem))
+    : [artifactEvidencePathForPackage(null, packageItem)];
+  return unique(paths);
+}
+
+function withWorkflowArtifactMetadata(config, packageItem) {
+  const scope = packageItem.deployable === false ? 'non-deployable' : 'publishable';
+  const artifactEvidencePaths = artifactEvidencePathsForPackage(config, packageItem);
+  const artifactUploadGlobs = unique([...packageItem.outputGlobs, ...artifactEvidencePaths]);
+  return {
+    ...packageItem,
+    workflowArtifactName: `${WORKFLOW_ARTIFACT_PREFIX}-${scope}-${packageItem.artifactName}`,
+    artifactEvidencePaths,
+    artifactEvidencePathsText: artifactEvidencePaths.join('\n'),
+    artifactUploadGlobs,
+    artifactUploadGlobsText: artifactUploadGlobs.join('\n'),
+  };
+}
+
 function createPackageMatrix(config, filters = {}) {
   const issues = validateWorkflowConfig(config);
   if (issues.length > 0) {
@@ -1241,7 +1421,24 @@ function createPackageMatrix(config, filters = {}) {
 
   const include = [];
   for (const target of config.targets) {
-    if (!matchesFilter(target.deploymentProfile, normalizedFilters.deploymentProfile)) {
+    const binding = targetProfileBinding(target);
+    const supportedDeploymentProfiles = binding === 'runtime-configurable'
+      ? target.supportedDeploymentProfiles
+      : undefined;
+    const activeDeploymentProfile = binding === 'runtime-configurable'
+      ? (normalizedFilters.deploymentProfile === 'all'
+        ? target.defaultDeploymentProfile
+        : normalizedFilters.deploymentProfile)
+      : target.deploymentProfile;
+    if (binding === 'non-deployable' && normalizedFilters.deploymentProfile !== 'all') {
+      continue;
+    }
+    if (binding === 'runtime-configurable'
+      && normalizedFilters.deploymentProfile !== 'all'
+      && !supportedDeploymentProfiles.includes(normalizedFilters.deploymentProfile)) {
+      continue;
+    }
+    if (binding !== 'runtime-configurable' && !matchesFilter(activeDeploymentProfile, normalizedFilters.deploymentProfile)) {
       continue;
     }
     if (!matchesFilter(target.runtimeTarget, normalizedFilters.runtimeTarget)) {
@@ -1265,9 +1462,13 @@ function createPackageMatrix(config, filters = {}) {
         continue;
       }
       const packageId = packageIdForTarget(target, format);
-      include.push({
+      const packageItem = {
         id: target.id,
-        deploymentProfile: target.deploymentProfile,
+        profileBinding: binding,
+        ...(activeDeploymentProfile ? { deploymentProfile: activeDeploymentProfile } : {}),
+        ...(supportedDeploymentProfiles ? { supportedDeploymentProfiles } : {}),
+        ...(target.defaultDeploymentProfile ? { defaultDeploymentProfile: target.defaultDeploymentProfile } : {}),
+        deployable: binding !== 'non-deployable',
         runtimeTarget: target.runtimeTarget,
         profile: target.profile,
         platform: target.platform,
@@ -1280,9 +1481,11 @@ function createPackageMatrix(config, filters = {}) {
         artifactName: createArtifactName(config.release.artifactPrefix, packageId),
         outputGlobs: target.outputGlobs,
         outputGlobsText: target.outputGlobs.join('\n'),
+        ...(target.artifactPath ? { artifactPath: target.artifactPath } : {}),
         ...(target.environment ? { environment: target.environment } : {}),
         ...(target.signing !== undefined ? { signing: target.signing } : {}),
-      });
+      };
+      include.push(withWorkflowArtifactMetadata(config, packageItem));
     }
   }
 
@@ -1309,6 +1512,8 @@ function createDeploymentMatrix(config, { packageMatrix = null, filters = {} } =
       if (!deploymentMatchesPackage(deployment, packageItem)) {
         continue;
       }
+      const activeDeploymentProfile = deployment.deploymentProfile ?? packageItem.deploymentProfile;
+      const artifactEvidencePath = artifactEvidencePathForPackage(deployment, packageItem);
       include.push({
         id: deployment.id,
         environment: deployment.environment,
@@ -1317,7 +1522,10 @@ function createDeploymentMatrix(config, { packageMatrix = null, filters = {} } =
         lifecycle: deployment.lifecycle ?? 'deploy',
         targetId: packageItem.id,
         packageId: packageItem.packageId,
-        deploymentProfile: packageItem.deploymentProfile,
+        deploymentProfile: activeDeploymentProfile,
+        profileBinding: packageItem.profileBinding,
+        ...(packageItem.supportedDeploymentProfiles ? { supportedDeploymentProfiles: packageItem.supportedDeploymentProfiles } : {}),
+        artifactEvidencePath,
         runtimeTarget: packageItem.runtimeTarget,
         profile: packageItem.profile,
         platform: packageItem.platform,
@@ -1333,7 +1541,14 @@ function createDeploymentMatrix(config, { packageMatrix = null, filters = {} } =
 }
 
 function deploymentMatchesPackage(deployment, packageItem) {
-  return matchesFilter(packageItem.deploymentProfile, deployment.deploymentProfile ?? 'all')
+  if (packageItem.profileBinding === 'non-deployable') {
+    return false;
+  }
+  const deploymentProfileMatches = packageItem.profileBinding === 'runtime-configurable'
+    ? (deployment.deploymentProfile === undefined
+      || packageItem.supportedDeploymentProfiles?.includes(deployment.deploymentProfile) === true)
+    : matchesFilter(packageItem.deploymentProfile, deployment.deploymentProfile ?? 'all');
+  return deploymentProfileMatches
     && matchesFilter(packageItem.runtimeTarget, deployment.runtimeTarget ?? 'all')
     && matchesFilter(packageItem.profile, deployment.profile ?? 'all')
     && matchesFilter(packageItem.platform, deployment.platform ?? 'all')
@@ -1348,15 +1563,23 @@ function packageIdForTarget(target, format) {
   return target.packageId ?? canonicalPackageIdForTarget(target, format);
 }
 
+function targetProfileToken(target) {
+  const binding = targetProfileBinding(target);
+  if (binding === 'runtime-configurable') return 'dual';
+  if (binding === 'non-deployable') return 'test';
+  return target.deploymentProfile;
+}
+
 function canonicalPackageIdForTarget(target, format) {
+  const profileToken = targetProfileToken(target);
   if (target.platform === 'linux' && isLinuxNativePackageFormat(format) && target.distribution) {
-    return joinPackageIdSegments(target.platform, target.distribution, target.architecture, target.deploymentProfile, target.profile, target.variant, formatToken(format));
+    return joinPackageIdSegments(target.platform, target.distribution, target.architecture, profileToken, target.profile, target.variant, formatToken(format));
   }
-  return joinPackageIdSegments(target.platform, target.architecture, target.deploymentProfile, target.profile, target.variant, formatToken(format));
+  return joinPackageIdSegments(target.platform, target.architecture, profileToken, target.profile, target.variant, formatToken(format));
 }
 
 function targetGroupIdForTarget(target) {
-  return joinPackageIdSegments(target.platform, target.architecture, target.deploymentProfile, target.profile, target.variant);
+  return joinPackageIdSegments(target.platform, target.architecture, targetProfileToken(target), target.profile, target.variant);
 }
 
 function joinPackageIdSegments(...segments) {
@@ -1487,8 +1710,213 @@ async function loadJsonObjectFile(filePath, label) {
   return parseJsonObject(raw, label);
 }
 
+function evidenceReferencePresent(value) {
+  if (typeof value === 'string') return value.trim() !== '';
+  return isPlainObject(value) && Object.keys(value).length > 0;
+}
+
+function validateArtifactEvidenceDocument(evidence, matrixItem, {
+  environment = null,
+  expectedVersion = null,
+  expectedSourceCommit = null,
+} = {}) {
+  const issues = [];
+  if (!isPlainObject(evidence)) return ['artifact evidence must be a JSON object'];
+  for (const field of ['artifactId', 'artifactPath', 'digest', 'version', 'sourceCommit', 'packageId', 'profileBinding', 'runtimeTarget']) {
+    validateRequiredString(evidence[field], `artifact evidence ${field}`, issues);
+  }
+  if (typeof evidence.artifactPath === 'string' && !isSafeRelativePath(evidence.artifactPath)) {
+    issues.push('artifact evidence artifactPath must be a safe relative path');
+  }
+  if (typeof evidence.digest === 'string' && !/^sha256:[a-f0-9]{64}$/u.test(evidence.digest)) {
+    issues.push('artifact evidence digest must use sha256:<64 lowercase hex characters>');
+  }
+  if (typeof evidence.version === 'string'
+    && !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(evidence.version)) {
+    issues.push('artifact evidence version must use SemVer');
+  }
+  if (typeof evidence.sourceCommit === 'string' && !/^[0-9a-f]{7,64}$/u.test(evidence.sourceCommit)) {
+    issues.push('artifact evidence sourceCommit must be a 7-64 character lowercase Git object id');
+  }
+  if (expectedVersion && evidence.version !== expectedVersion) {
+    issues.push('artifact evidence version does not match selected package version');
+  }
+  if (expectedSourceCommit && evidence.sourceCommit !== expectedSourceCommit) {
+    issues.push('artifact evidence sourceCommit does not match selected source commit');
+  }
+  if (!['fixed', 'runtime-configurable'].includes(evidence.profileBinding)) {
+    issues.push('artifact evidence profileBinding must be fixed or runtime-configurable');
+  }
+  if (evidence.packageId !== matrixItem.packageId) issues.push('artifact evidence packageId does not match selected package');
+  if (evidence.profileBinding !== matrixItem.profileBinding) issues.push('artifact evidence profileBinding does not match selected package');
+  if (evidence.runtimeTarget !== matrixItem.runtimeTarget) issues.push('artifact evidence runtimeTarget does not match selected package');
+  if (evidence.profileBinding === 'fixed') {
+    if (evidence.deploymentProfile !== matrixItem.deploymentProfile) {
+      issues.push('artifact evidence deploymentProfile does not match selected deployment profile');
+    }
+    if (evidence.supportedDeploymentProfiles !== undefined) {
+      issues.push('fixed artifact evidence must not declare supportedDeploymentProfiles');
+    }
+  }
+  if (evidence.profileBinding === 'runtime-configurable') {
+    if (evidence.deploymentProfile !== undefined) {
+      issues.push('runtime-configurable artifact evidence must not declare deploymentProfile');
+    }
+    if (!Array.isArray(evidence.supportedDeploymentProfiles)
+      || evidence.supportedDeploymentProfiles.length !== 2
+      || !SUPPORTED_DEPLOYMENT_PROFILES.every((profile) => evidence.supportedDeploymentProfiles.includes(profile))
+      || !evidence.supportedDeploymentProfiles.includes(matrixItem.deploymentProfile)) {
+      issues.push('runtime-configurable artifact evidence must support standalone and cloud including the selected profile');
+    }
+  }
+  const lifecycleEnvironment = ['test', 'staging', 'production'].includes(environment) ? environment : null;
+  if (lifecycleEnvironment && evidence.environment !== undefined && evidence.environment !== lifecycleEnvironment) {
+    issues.push('artifact evidence environment does not match selected deployment environment');
+  }
+  if (lifecycleEnvironment && evidence.profile !== undefined
+    && evidence.profile !== `${matrixItem.deploymentProfile}.${lifecycleEnvironment}`) {
+    issues.push('artifact evidence profile does not match selected deployment profile and environment');
+  }
+  for (const field of ['sbom', 'provenance', 'signature']) {
+    if (!evidenceReferencePresent(evidence[field])) issues.push(`artifact evidence ${field} reference is required`);
+  }
+  return issues;
+}
+
+function resolveArtifactFile(artifactRoot, artifactPath) {
+  if (!isSafeRelativePath(artifactRoot, { allowDot: true })) {
+    throw new Error('--artifact-root must be a safe relative path');
+  }
+  if (!isSafeRelativePath(artifactPath)) {
+    throw new Error('artifact evidence artifactPath must be a safe relative path');
+  }
+  return path.resolve(artifactRoot, artifactPath);
+}
+
+function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256');
+    const stream = createReadStream(filePath);
+    stream.on('error', reject);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(`sha256:${hash.digest('hex')}`));
+  });
+}
+
+async function verifyArtifactEvidence(filePath, matrixItem, options = {}) {
+  if (!filePath) throw new Error('--artifact-evidence is required for evidence command');
+  if (!isSafeRelativePath(filePath, { allowDot: false })) {
+    throw new Error('--artifact-evidence must be a safe relative path');
+  }
+  const absolutePath = path.resolve(filePath);
+  let evidence;
+  try {
+    evidence = JSON.parse(await readFile(absolutePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`artifact evidence is not valid JSON at ${absolutePath}: ${error.message}`);
+  }
+  const issues = validateArtifactEvidenceDocument(evidence, matrixItem, options);
+  if (typeof evidence.artifactPath === 'string' && isSafeRelativePath(evidence.artifactPath)) {
+    const artifactFile = resolveArtifactFile(options.artifactRoot ?? '.', evidence.artifactPath);
+    if (!existsSync(artifactFile)) {
+      issues.push(`artifact evidence artifactPath does not exist: ${artifactFile}`);
+    } else {
+      const actualDigest = await sha256File(artifactFile);
+      if (actualDigest !== evidence.digest) {
+        issues.push('artifact evidence digest does not match packaged artifact bytes');
+      }
+    }
+  }
+  if (issues.length > 0) throw new Error(`invalid artifact evidence: ${issues.join('; ')}`);
+  return { path: absolutePath, artifactPath: resolveArtifactFile(options.artifactRoot ?? '.', evidence.artifactPath), evidence };
+}
+
+async function createArtifactEvidence({
+  outputPath,
+  artifactPath,
+  artifactRoot = '.',
+  artifactId = null,
+  version,
+  sourceCommit,
+  matrixItem,
+  environment = null,
+  sbom,
+  provenance,
+  signature,
+}) {
+  if (!outputPath || !isSafeRelativePath(outputPath)) {
+    throw new Error('--artifact-evidence must be a safe relative output path');
+  }
+  if (!artifactPath || !isSafeRelativePath(artifactPath)) {
+    throw new Error('--artifact must be a safe relative path');
+  }
+  const artifactFile = resolveArtifactFile(artifactRoot, artifactPath);
+  if (!existsSync(artifactFile)) throw new Error(`packaged artifact not found: ${artifactFile}`);
+  const evidence = {
+    artifactId: artifactId || `${matrixItem.packageId}:${artifactPath}`,
+    artifactPath,
+    digest: await sha256File(artifactFile),
+    version,
+    sourceCommit,
+    packageId: matrixItem.packageId,
+    profileBinding: matrixItem.profileBinding,
+    ...(matrixItem.profileBinding === 'fixed'
+      ? { deploymentProfile: matrixItem.deploymentProfile }
+      : { supportedDeploymentProfiles: matrixItem.supportedDeploymentProfiles }),
+    runtimeTarget: matrixItem.runtimeTarget,
+    ...(['test', 'staging', 'production'].includes(environment)
+      ? { environment, profile: `${matrixItem.deploymentProfile}.${environment}` }
+      : {}),
+    sbom,
+    provenance,
+    signature,
+  };
+  const issues = validateArtifactEvidenceDocument(evidence, matrixItem, {
+    environment,
+    expectedVersion: version,
+    expectedSourceCommit: sourceCommit,
+  });
+  if (issues.length > 0) throw new Error(`cannot create artifact evidence: ${issues.join('; ')}`);
+  const absoluteOutputPath = path.resolve(outputPath);
+  await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
+  await writeFile(absoluteOutputPath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
+  return { path: absoluteOutputPath, artifactPath: artifactFile, evidence };
+}
+
 function stripUtf8Bom(value) {
   return String(value).replace(/^\uFEFF/u, '');
+}
+
+function readGitSourceCommit(root = process.cwd()) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['rev-parse', 'HEAD'], {
+      cwd: root,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.once('error', reject);
+    child.once('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`cannot resolve source commit: ${stderr.trim() || `git exited with code ${code}`}`));
+        return;
+      }
+      resolve(stdout.trim());
+    });
+  });
+}
+
+async function resolveEvidenceSourceCommit(settings, env = process.env) {
+  if (settings.sourceCommit) return settings.sourceCommit;
+  try {
+    return await readGitSourceCommit(process.cwd());
+  } catch (error) {
+    if (env.GITHUB_SHA) return env.GITHUB_SHA;
+    throw error;
+  }
 }
 
 function resolvePackageVersion(config, { version = null, releaseTag = null } = {}) {
@@ -1505,7 +1933,11 @@ function createWorkflowSummary(config, matrix, { version = null, releaseTag = nu
     },
     version: resolvePackageVersion(config, { version, releaseTag }),
     targets: matrix.include.length,
-    deploymentProfiles: unique(matrix.include.map((item) => item.deploymentProfile)),
+    publishableTargets: matrix.include.filter((item) => item.deployable !== false).length,
+    deploymentProfiles: unique(matrix.include.flatMap((item) =>
+      item.supportedDeploymentProfiles ?? (item.deploymentProfile ? [item.deploymentProfile] : [])
+    )),
+    profileBindings: unique(matrix.include.map((item) => item.profileBinding)),
     runtimeTargets: unique(matrix.include.map((item) => item.runtimeTarget)),
     profiles: unique(matrix.include.map((item) => item.profile)),
     platforms: unique(matrix.include.map((item) => item.platform)),
@@ -1517,6 +1949,7 @@ function createWorkflowSummary(config, matrix, { version = null, releaseTag = nu
       githubRelease: config.publish?.githubRelease !== false,
       aggregateRelease: config.publish?.aggregateRelease === true,
       aggregateArtifactPath: config.publish?.aggregateArtifactPath ?? 'release-assets',
+      aggregateArtifactPattern: `${WORKFLOW_ARTIFACT_PREFIX}-publishable-*`,
       aggregateUploadGlobs: config.publish?.aggregateUploadGlobs ?? ['release-assets/**/*'],
       aggregateUploadGlobsText: (config.publish?.aggregateUploadGlobs ?? ['release-assets/**/*']).join('\n'),
       retentionDays: config.publish?.retentionDays ?? null,
@@ -1551,7 +1984,7 @@ async function createReleaseNotes(config, {
     releaseLabel,
     version: resolvedVersion,
     releaseTag,
-    packageItems: matrix.include,
+    packageItems: matrix.include.filter((item) => item.deployable !== false),
   };
 
   if (configuredSource === 'none') {
@@ -1716,7 +2149,8 @@ function appendPackageSummary(lines, packageItems) {
   lines.push('## Packages', '');
   packageItems.forEach((item) => {
     const platform = item.distribution ? `${item.platform}/${item.distribution}` : item.platform;
-    lines.push(`- ${item.packageId} (${item.deploymentProfile}, ${item.runtimeTarget}, ${platform}, ${item.architecture}, ${item.profile}, ${item.format})`);
+    const profile = item.supportedDeploymentProfiles?.join('+') ?? item.deploymentProfile ?? 'non-deployable';
+    lines.push(`- ${item.packageId} (${profile}, ${item.runtimeTarget}, ${platform}, ${item.architecture}, ${item.profile}, ${item.format})`);
   });
   lines.push('');
 }
@@ -1798,7 +2232,11 @@ function createLifecyclePlan(config, {
     SDKWORK_APP_ID: config.app.id,
     SDKWORK_APP_REPOSITORY: config.app.repository,
     SDKWORK_APP_SOURCE_PATH: config.app.sourcePath ?? '.',
+    SDKWORK_WORKFLOW_CLI: WORKFLOW_CLI_PATH,
     ...(effectiveMatrixItem.deploymentProfile ? { SDKWORK_DEPLOYMENT_PROFILE: effectiveMatrixItem.deploymentProfile } : {}),
+    ...(effectiveMatrixItem.supportedDeploymentProfiles
+      ? { SDKWORK_SUPPORTED_DEPLOYMENT_PROFILES: effectiveMatrixItem.supportedDeploymentProfiles.join(',') }
+      : {}),
     ...(effectiveMatrixItem.runtimeTarget ? { SDKWORK_RUNTIME_TARGET: effectiveMatrixItem.runtimeTarget } : {}),
     SDKWORK_PACKAGE_ARCHITECTURE: effectiveMatrixItem.architecture,
     SDKWORK_PACKAGE_FORMAT: effectiveMatrixItem.format,
@@ -1806,6 +2244,9 @@ function createLifecyclePlan(config, {
     SDKWORK_PACKAGE_PLATFORM: effectiveMatrixItem.platform,
     SDKWORK_PACKAGE_PROFILE: effectiveMatrixItem.profile,
     SDKWORK_PACKAGE_TARGET_ID: effectiveMatrixItem.id,
+    ...(effectiveMatrixItem.artifactPath
+      ? { SDKWORK_PACKAGE_ARTIFACT_PATH: effectiveMatrixItem.artifactPath }
+      : {}),
     SDKWORK_PACKAGE_VERSION: resolvePackageVersion(config, { version, releaseTag }) || '',
     SDKWORK_RELEASE_TAG: releaseTag || '',
     ...aggregateEnv,
@@ -1814,6 +2255,10 @@ function createLifecyclePlan(config, {
     ...(effectiveMatrixItem.environment ? { SDKWORK_DEPLOY_ENVIRONMENT: effectiveMatrixItem.environment } : {}),
     ...(effectiveMatrixItem.url ? { SDKWORK_DEPLOY_URL: effectiveMatrixItem.url } : {}),
     ...(effectiveMatrixItem.lifecycle ? { SDKWORK_DEPLOY_LIFECYCLE: effectiveMatrixItem.lifecycle } : {}),
+    ...(effectiveMatrixItem.artifactEvidencePath ? { SDKWORK_ARTIFACT_EVIDENCE_PATH: effectiveMatrixItem.artifactEvidencePath } : {}),
+    ...(effectiveMatrixItem.artifactEvidencePaths
+      ? { SDKWORK_ARTIFACT_EVIDENCE_PATHS: effectiveMatrixItem.artifactEvidencePaths.join('\n') }
+      : {}),
   };
 
   return {
@@ -2092,6 +2537,7 @@ function defaultTargetsForProfile(profile) {
     return [
       {
         id: 'linux-debian-x64-standalone-server-deb',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'server',
         profile: 'server',
@@ -2104,6 +2550,7 @@ function defaultTargetsForProfile(profile) {
       },
       {
         id: 'linux-rhel-x64-standalone-server-rpm',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'server',
         profile: 'server',
@@ -2116,6 +2563,7 @@ function defaultTargetsForProfile(profile) {
       },
       {
         id: 'linux-x64-standalone-server-tar-gz',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'server',
         profile: 'server',
@@ -2131,6 +2579,7 @@ function defaultTargetsForProfile(profile) {
     return [
       {
         id: 'windows-x64-standalone-desktop-msi',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'desktop',
         profile: 'desktop',
@@ -2142,6 +2591,7 @@ function defaultTargetsForProfile(profile) {
       },
       {
         id: 'windows-x64-standalone-desktop-exe',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'desktop',
         profile: 'desktop',
@@ -2153,6 +2603,7 @@ function defaultTargetsForProfile(profile) {
       },
       {
         id: 'macos-arm64-standalone-desktop-dmg',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'desktop',
         profile: 'desktop',
@@ -2168,6 +2619,7 @@ function defaultTargetsForProfile(profile) {
     return [
       {
         id: 'android-arm64-standalone-mobile-aab',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'flutter-android',
         profile: 'mobile',
@@ -2179,6 +2631,7 @@ function defaultTargetsForProfile(profile) {
       },
       {
         id: 'ios-universal-standalone-mobile-ipa',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'flutter-ios',
         profile: 'mobile',
@@ -2194,6 +2647,7 @@ function defaultTargetsForProfile(profile) {
     return [
       {
         id: 'ipados-universal-standalone-tablet-ipa',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'tablet-ipados',
         profile: 'tablet',
@@ -2205,6 +2659,7 @@ function defaultTargetsForProfile(profile) {
       },
       {
         id: 'android-tablet-arm64-standalone-tablet-aab',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'tablet-android',
         profile: 'tablet',
@@ -2216,6 +2671,7 @@ function defaultTargetsForProfile(profile) {
       },
       {
         id: 'windows-tablet-x64-standalone-tablet-msix',
+        profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'desktop',
         profile: 'tablet',
@@ -2231,6 +2687,7 @@ function defaultTargetsForProfile(profile) {
     return [
       {
         id: 'web-universal-cloud-browser-web-url',
+        profileBinding: 'fixed',
         deploymentProfile: 'cloud',
         runtimeTarget: 'browser',
         profile: 'browser',
@@ -2246,6 +2703,7 @@ function defaultTargetsForProfile(profile) {
     return [
       {
         id: 'container-x64-cloud-container-oci',
+        profileBinding: 'fixed',
         deploymentProfile: 'cloud',
         runtimeTarget: 'container',
         profile: 'container',
@@ -2261,6 +2719,7 @@ function defaultTargetsForProfile(profile) {
     return [
       {
         id: 'container-x64-cloud-worker-oci',
+        profileBinding: 'fixed',
         deploymentProfile: 'cloud',
         runtimeTarget: 'container',
         profile: 'worker',
@@ -2276,6 +2735,7 @@ function defaultTargetsForProfile(profile) {
     return [
       {
         id: 'mp-weixin-universal-cloud-mini-program-mini-program-package',
+        profileBinding: 'fixed',
         deploymentProfile: 'cloud',
         runtimeTarget: 'mini-program',
         profile: 'mini-program',
@@ -2290,8 +2750,8 @@ function defaultTargetsForProfile(profile) {
   if (profile === 'test') {
     return [
       {
-        id: 'test-noarch-standalone-test-zip',
-        deploymentProfile: 'standalone',
+        id: 'test-noarch-test-test-zip',
+        profileBinding: 'non-deployable',
         runtimeTarget: 'test-runner',
         profile: 'test',
         platform: 'test',
@@ -2305,6 +2765,7 @@ function defaultTargetsForProfile(profile) {
   return [
     {
       id: 'web-universal-cloud-library-zip',
+      profileBinding: 'fixed',
       deploymentProfile: 'cloud',
       runtimeTarget: 'browser',
       profile: 'library',
@@ -2529,6 +2990,52 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     return 0;
   }
 
+  if (settings.command === 'evidence:create' || settings.command === 'evidence') {
+    const targetId = settings.targetId || env.SDKWORK_PACKAGE_TARGET_ID;
+    if (!targetId) throw new Error(`--target-id is required for ${settings.command} command`);
+    const matrix = createPackageMatrix(config, settings);
+    const matrixItem = matrix.include.find((item) => item.id === targetId || item.packageId === targetId);
+    if (!matrixItem || matrixItem.deployable === false) {
+      throw new Error(`No deployable matrix target found for --target-id ${targetId}`);
+    }
+    const version = resolvePackageVersion(config, {
+      version: settings.version || env.SDKWORK_PACKAGE_VERSION,
+      releaseTag: settings.releaseTag || env.SDKWORK_RELEASE_TAG,
+    });
+    if (!version) throw new Error(`--version, --release-tag, or release.defaultVersion is required for ${settings.command}`);
+    const sourceCommit = await resolveEvidenceSourceCommit(settings, env);
+    const result = settings.command === 'evidence:create'
+      ? await createArtifactEvidence({
+          outputPath: settings.artifactEvidencePath || env.SDKWORK_ARTIFACT_EVIDENCE_PATH,
+          artifactPath: settings.artifactPath || env.SDKWORK_PACKAGE_ARTIFACT_PATH || matrixItem.artifactPath,
+          artifactRoot: settings.artifactRoot,
+          artifactId: settings.artifactId,
+          version,
+          sourceCommit,
+          matrixItem,
+          environment: settings.deployEnvironment || env.SDKWORK_DEPLOY_ENVIRONMENT,
+          sbom: settings.sbomReference || env.SDKWORK_SBOM_REFERENCE,
+          provenance: settings.provenanceReference || env.SDKWORK_PROVENANCE_REFERENCE,
+          signature: settings.signatureReference || env.SDKWORK_SIGNATURE_REFERENCE,
+        })
+      : await verifyArtifactEvidence(
+        settings.artifactEvidencePath || env.SDKWORK_ARTIFACT_EVIDENCE_PATH,
+        matrixItem,
+        {
+          environment: settings.deployEnvironment || env.SDKWORK_DEPLOY_ENVIRONMENT,
+          artifactRoot: settings.artifactRoot,
+          expectedVersion: version,
+          expectedSourceCommit: sourceCommit,
+        },
+      );
+    if (settings.json) {
+      console.log(JSON.stringify({ ok: true, path: result.path, evidence: result.evidence }, null, 2));
+    } else {
+      console.log(`[sdkwork-workflow] artifact evidence ${settings.command === 'evidence:create' ? 'created' : 'valid'}: ${result.path}`);
+    }
+    return 0;
+  }
+
   if (settings.command === 'deployments') {
     const packageMatrix = createPackageMatrix(config, settings);
     const deploymentMatrix = createDeploymentMatrix(config, { packageMatrix });
@@ -2638,9 +3145,16 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   throw new Error(`Unsupported command: ${settings.command}`);
 }
 
-const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
-const modulePath = fileURLToPath(import.meta.url);
-if (invokedPath === modulePath) {
+function sameModulePath(left, right) {
+  try {
+    return realpathSync(left) === realpathSync(right);
+  } catch {
+    return path.resolve(left) === path.resolve(right);
+  }
+}
+
+const invokedPath = process.argv[1] || null;
+if (invokedPath && sameModulePath(invokedPath, WORKFLOW_CLI_PATH)) {
   main().then((code) => {
     process.exitCode = code;
   }).catch((error) => {
@@ -2653,12 +3167,14 @@ export {
   SCHEMA_VERSION,
   SUPPORTED_ARCHITECTURES,
   SUPPORTED_DEPLOYMENT_PROFILES,
+  SUPPORTED_PROFILE_BINDINGS,
   SUPPORTED_FORMATS,
   SUPPORTED_PLATFORMS,
   SUPPORTED_PROFILES,
   SUPPORTED_RUNTIME_TARGETS,
   createDependencyPlan,
   createDeploymentMatrix,
+  createArtifactEvidence,
   createLifecyclePlan,
   createPackageMatrix,
   createReleaseNotes,
@@ -2675,5 +3191,7 @@ export {
   stripUtf8Bom,
   loadJsonObjectFile,
   validateWorkflowConfig,
+  validateArtifactEvidenceDocument,
+  verifyArtifactEvidence,
   writeGithubOutputs,
 };

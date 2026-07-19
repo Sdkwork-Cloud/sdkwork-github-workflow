@@ -50,7 +50,8 @@ const LEGACY_DEPENDENCY_MATERIALIZATION_PATTERNS = Object.freeze([
   new RegExp(escapeRegExp(`[${['sdkwork', 'dependencies'].join('-')}]`), 'u'),
 ]);
 
-const MANIFEST_PACKAGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*-(standalone|cloud)-[a-z0-9][a-z0-9-]*-[a-z0-9][a-z0-9-]*$/u;
+const MANIFEST_PACKAGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*-(standalone|cloud|dual|test)-[a-z0-9][a-z0-9-]*-[a-z0-9][a-z0-9-]*$/u;
+const MANIFEST_PROFILE_BINDINGS = new Set(['fixed', 'runtime-configurable', 'non-deployable']);
 
 function requireFile(filePath, issues) {
   if (!existsSync(path.resolve(filePath))) {
@@ -166,20 +167,49 @@ function validateAppManifestStandard(manifest, issues, filePath = 'sdkwork.app.c
     }
     packageIds.add(packageId);
 
-    const deploymentProfile = packageEntry?.deploymentProfile;
-    if (deploymentProfile === undefined) {
-      issues.push(`${label}.deploymentProfile is required`);
-    } else if (!SUPPORTED_DEPLOYMENT_PROFILES.includes(deploymentProfile)) {
-      issues.push(`${label}.deploymentProfile must be standalone or cloud`);
-    } else if (Array.isArray(supportedProfiles) && !supportedProfiles.includes(deploymentProfile)) {
-      issues.push(`${label}.deploymentProfile must be listed in runtime.supportedDeploymentProfiles`);
-    }
-
     const runtimeTarget = packageEntry?.runtimeTarget;
     if (runtimeTarget === undefined) {
       issues.push(`${label}.runtimeTarget is required`);
     } else if (!SUPPORTED_RUNTIME_TARGETS.includes(runtimeTarget)) {
       issues.push(`${label}.runtimeTarget must be a canonical runtime target`);
+    }
+
+    const binding = packageEntry?.profileBinding ?? (packageEntry?.deploymentProfile ? 'fixed' : undefined);
+    if (!MANIFEST_PROFILE_BINDINGS.has(binding)) {
+      issues.push(`${label}.profileBinding is required (or legacy deploymentProfile must be present)`);
+      issues.push(`${label}.deploymentProfile is required`);
+    } else if (binding === 'fixed') {
+      const deploymentProfile = packageEntry?.deploymentProfile;
+      if (!SUPPORTED_DEPLOYMENT_PROFILES.includes(deploymentProfile)) {
+        issues.push(`${label}.deploymentProfile must be standalone or cloud`);
+      } else if (Array.isArray(supportedProfiles) && !supportedProfiles.includes(deploymentProfile)) {
+        issues.push(`${label}.deploymentProfile must be listed in runtime.supportedDeploymentProfiles`);
+      }
+      if (packageEntry?.supportedDeploymentProfiles !== undefined || packageEntry?.defaultDeploymentProfile !== undefined) {
+        issues.push(`${label}: fixed binding forbids supported/default deployment profiles`);
+      }
+    } else if (binding === 'runtime-configurable') {
+      if (packageEntry?.deploymentProfile !== undefined) {
+        issues.push(`${label}.deploymentProfile must be omitted for runtime-configurable binding`);
+      }
+      const packageProfiles = packageEntry?.supportedDeploymentProfiles;
+      if (!Array.isArray(packageProfiles)
+        || packageProfiles.length !== 2
+        || new Set(packageProfiles).size !== 2
+        || !SUPPORTED_DEPLOYMENT_PROFILES.every((profile) => packageProfiles.includes(profile))) {
+        issues.push(`${label}.supportedDeploymentProfiles must contain exactly standalone and cloud`);
+      }
+      if (!SUPPORTED_DEPLOYMENT_PROFILES.includes(packageEntry?.defaultDeploymentProfile)
+        || !packageProfiles?.includes(packageEntry.defaultDeploymentProfile)) {
+        issues.push(`${label}.defaultDeploymentProfile must be standalone or cloud and listed in supportedDeploymentProfiles`);
+      }
+    } else {
+      if (runtimeTarget !== 'test-runner') {
+        issues.push(`${label}.runtimeTarget must be test-runner for non-deployable binding`);
+      }
+      for (const field of ['deploymentProfile', 'supportedDeploymentProfiles', 'defaultDeploymentProfile']) {
+        if (packageEntry?.[field] !== undefined) issues.push(`${label}.${field} must be omitted for non-deployable binding`);
+      }
     }
   });
 

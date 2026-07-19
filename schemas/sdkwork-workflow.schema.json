@@ -256,7 +256,61 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "deploymentProfile", "runtimeTarget", "profile", "platform", "architecture", "formats", "runner", "outputGlobs"],
+        "required": ["id", "runtimeTarget", "profile", "platform", "architecture", "formats", "runner", "outputGlobs"],
+        "anyOf": [
+          {
+            "required": ["profileBinding"]
+          },
+          {
+            "required": ["deploymentProfile"],
+            "description": "Compatibility input: deploymentProfile without profileBinding is inferred as fixed. New generated configuration always emits profileBinding."
+          }
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": { "profileBinding": { "const": "fixed" } },
+              "required": ["profileBinding"]
+            },
+            "then": {
+              "required": ["deploymentProfile"],
+              "not": {
+                "anyOf": [
+                  { "required": ["supportedDeploymentProfiles"] },
+                  { "required": ["defaultDeploymentProfile"] }
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "profileBinding": { "const": "runtime-configurable" } },
+              "required": ["profileBinding"]
+            },
+            "then": {
+              "required": ["supportedDeploymentProfiles", "defaultDeploymentProfile"],
+              "not": { "required": ["deploymentProfile"] }
+            }
+          },
+          {
+            "if": {
+              "properties": { "profileBinding": { "const": "non-deployable" } },
+              "required": ["profileBinding"]
+            },
+            "then": {
+              "properties": {
+                "runtimeTarget": { "const": "test-runner" }
+              },
+              "not": {
+                "anyOf": [
+                  { "required": ["deploymentProfile"] },
+                  { "required": ["supportedDeploymentProfiles"] },
+                  { "required": ["defaultDeploymentProfile"] }
+                ]
+              }
+            }
+          }
+        ],
         "properties": {
           "id": {
             "type": "string",
@@ -268,9 +322,25 @@
             "pattern": "^[a-z0-9][a-z0-9-]*$",
             "description": "Optional explicit package id. When present it must match the canonical package id for a single-format target."
           },
+          "profileBinding": {
+            "enum": ["fixed", "runtime-configurable", "non-deployable"],
+            "description": "Artifact deployment-profile binding. Omission is accepted only for migration-era fixed targets that declare deploymentProfile."
+          },
           "deploymentProfile": {
             "enum": ["standalone", "cloud"],
             "description": "Application deployment architecture. This is always separate from runtimeTarget and package profile."
+          },
+          "supportedDeploymentProfiles": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "enum": ["standalone", "cloud"]
+            }
+          },
+          "defaultDeploymentProfile": {
+            "enum": ["standalone", "cloud"]
           },
           "runtimeTarget": {
             "enum": [
@@ -380,6 +450,11 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "artifactPath": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Safe relative path to the primary immutable artifact whose bytes are bound by artifact evidence."
           },
           "environment": {
             "type": "string"
@@ -562,6 +637,11 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]*$",
             "description": "Canonical package id selector. Linux native deb/rpm package ids include the distribution segment."
+          },
+          "artifactEvidencePath": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Safe relative path to the immutable artifact evidence document consumed by the deployment lifecycle. Supports {packageId} and {targetId}; defaults to .sdkwork/evidence/{packageId}.json."
           },
           "lifecycle": {
             "enum": ["deploy", "publish"]
