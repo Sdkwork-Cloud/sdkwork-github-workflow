@@ -454,19 +454,19 @@ npm test
 Run full repository validation:
 
 ```bash
-npm run validate
+npm run check
 ```
 
 Validate the claw-router example:
 
 ```bash
-npm run validate:example
+npm run check:example
 ```
 
 Render an example matrix:
 
 ```bash
-npm run matrix:example
+npm run workflow:matrix:example
 ```
 
 Render release notes:
