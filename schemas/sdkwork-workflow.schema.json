@@ -361,6 +361,22 @@
               "test-runner"
             ]
           },
+          "targetPlatform": {
+            "enum": [
+              "web", "h5", "h5-weixin", "linux", "windows", "macos", "ios", "ipados",
+              "android", "android-tablet", "windows-tablet", "harmony", "container",
+              "mp-weixin", "mp-alipay", "mp-baidu", "mp-toutiao", "mp-lark", "mp-qq",
+              "mp-kuaishou", "mp-jd", "mp-360", "mp-dingtalk", "mp-ali", "test"
+            ],
+            "description": "Canonical target platform for client package metadata. It must match platform when present."
+          },
+          "clientArchitecture": {
+            "enum": [
+              "pc-web", "h5", "capacitor", "flutter", "tauri", "electron",
+              "android-native", "ios-native", "harmony-native", "mini-program"
+            ],
+            "description": "Canonical client implementation architecture. It is valid only for client runtime targets."
+          },
           "profile": {
             "enum": ["browser", "desktop", "mobile", "tablet", "mini-program", "server", "container", "worker", "library", "test"]
           },

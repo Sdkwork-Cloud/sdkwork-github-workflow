@@ -71,6 +71,18 @@ const SUPPORTED_PLATFORMS = Object.freeze([
   'mp-ali',
   'test',
 ]);
+const SUPPORTED_CLIENT_ARCHITECTURES = Object.freeze([
+  'pc-web',
+  'h5',
+  'capacitor',
+  'flutter',
+  'tauri',
+  'electron',
+  'android-native',
+  'ios-native',
+  'harmony-native',
+  'mini-program',
+]);
 const SUPPORTED_ARCHITECTURES = Object.freeze(['x64', 'arm64', 'armv7', 'universal', 'wasm32', 'noarch']);
 const SUPPORTED_DEB_DISTRIBUTIONS = Object.freeze(['debian', 'ubuntu']);
 const SUPPORTED_RPM_DISTRIBUTIONS = Object.freeze(['rhel', 'centos', 'fedora', 'opensuse', 'suse']);
@@ -193,6 +205,8 @@ const TARGET_CONFIG_KEYS = Object.freeze([
   'supportedDeploymentProfiles',
   'defaultDeploymentProfile',
   'runtimeTarget',
+  'targetPlatform',
+  'clientArchitecture',
   'profile',
   'platform',
   'distribution',
@@ -684,10 +698,19 @@ function validateWorkflowConfig(config) {
         validateDeployment(deployment, index, issues, seenDeploymentIds)
       );
       validateDeploymentBindings(config.deployments, config.targets, issues);
+      validateDeploymentLifecyclePolicy(config, issues);
     }
   }
 
   return issues;
+}
+
+function validateDeploymentLifecyclePolicy(config, issues) {
+  for (const lifecycle of new Set(config.deployments.map((deployment) => deployment.lifecycle ?? 'deploy'))) {
+    if (!hasLifecycleSteps(config.lifecycle?.[lifecycle])) {
+      issues.push(`deployments using lifecycle.${lifecycle} require executable lifecycle.${lifecycle} steps`);
+    }
+  }
 }
 
 function validateDependency(
@@ -821,6 +844,7 @@ function validateTarget(target, index, issues, seenIds, seenPackageIds) {
   validateOptionalString(target?.packageId, `${label}.packageId`, issues, { pattern: PACKAGE_ID_PATTERN });
   validateTargetProfileBinding(target, label, issues);
   validateEnum(target?.runtimeTarget, `${label}.runtimeTarget`, SUPPORTED_RUNTIME_TARGETS, issues);
+  validateTargetClientAxes(target, label, issues);
   validateEnum(target?.profile, `${label}.profile`, SUPPORTED_PROFILES, issues);
   validateEnum(target?.platform, `${label}.platform`, SUPPORTED_PLATFORMS, issues);
   if (target?.distribution !== undefined) {
@@ -855,6 +879,29 @@ function validateTarget(target, index, issues, seenIds, seenPackageIds) {
   }
   if (target?.signing !== undefined && typeof target.signing !== 'boolean') {
     issues.push(`${label}.signing must be a boolean`);
+  }
+}
+
+function validateTargetClientAxes(target, label, issues) {
+  if (target?.targetPlatform !== undefined) {
+    validateEnum(target.targetPlatform, `${label}.targetPlatform`, SUPPORTED_PLATFORMS, issues);
+    if (typeof target.platform === 'string' && target.targetPlatform !== target.platform) {
+      issues.push(`${label}.targetPlatform must equal platform`);
+    }
+  }
+  if (target?.clientArchitecture !== undefined) {
+    validateEnum(
+      target.clientArchitecture,
+      `${label}.clientArchitecture`,
+      SUPPORTED_CLIENT_ARCHITECTURES,
+      issues,
+    );
+    if (!RUNTIME_CONFIGURABLE_RUNTIME_TARGETS.includes(target.runtimeTarget)) {
+      issues.push(`${label}.clientArchitecture is valid only for client runtime targets`);
+    }
+  }
+  if ((target?.targetPlatform === undefined) !== (target?.clientArchitecture === undefined)) {
+    issues.push(`${label}.targetPlatform and clientArchitecture must be declared together for client metadata`);
   }
 }
 
@@ -1150,6 +1197,8 @@ function validateSecurityPolicy(config, issues) {
   if (config.security?.signingRequired === true) {
     if (!hasLifecycleSteps(config.lifecycle?.sign)) {
       issues.push('security.signingRequired requires lifecycle.sign steps');
+    } else if (config.lifecycle.sign.every(isNoOpLifecycleStep)) {
+      issues.push('security.signingRequired requires an executable lifecycle.sign step, not logging-only placeholders');
     }
     if (Array.isArray(config.targets)) {
       config.targets.forEach((target, index) => {
@@ -1159,13 +1208,24 @@ function validateSecurityPolicy(config, issues) {
       });
     }
   }
-  if (config.security?.sbomRequired === true && !hasLifecycleSteps(config.lifecycle?.sbom)) {
-    issues.push('security.sbomRequired requires lifecycle.sbom steps');
+  if (config.security?.sbomRequired === true) {
+    if (!hasLifecycleSteps(config.lifecycle?.sbom)) {
+      issues.push('security.sbomRequired requires lifecycle.sbom steps');
+    } else if (config.lifecycle.sbom.every(isNoOpLifecycleStep)) {
+      issues.push('security.sbomRequired requires an executable lifecycle.sbom step, not logging-only placeholders');
+    }
   }
 }
 
 function hasLifecycleSteps(steps) {
   return Array.isArray(steps) && steps.length > 0;
+}
+
+function isNoOpLifecycleStep(step) {
+  const run = String(step?.run ?? '').trim().replace(/;+$/u, '').trim();
+  return /^(?:echo|write-(?:host|output))\b[^\r\n]*$/iu.test(run)
+    || /^console\.(?:log|info|warn)\([^\r\n]*\)$/u.test(run)
+    || /^node\s+(?:--eval|-e)\s+["']console\.(?:log|info|warn)\([^\r\n]*\);?["']$/u.test(run);
 }
 
 function validatePublish(publish, issues) {
@@ -1470,6 +1530,8 @@ function createPackageMatrix(config, filters = {}) {
         ...(target.defaultDeploymentProfile ? { defaultDeploymentProfile: target.defaultDeploymentProfile } : {}),
         deployable: binding !== 'non-deployable',
         runtimeTarget: target.runtimeTarget,
+        ...(target.targetPlatform ? { targetPlatform: target.targetPlatform } : {}),
+        ...(target.clientArchitecture ? { clientArchitecture: target.clientArchitecture } : {}),
         profile: target.profile,
         platform: target.platform,
         ...(target.distribution ? { distribution: target.distribution } : {}),
@@ -2238,6 +2300,10 @@ function createLifecyclePlan(config, {
       ? { SDKWORK_SUPPORTED_DEPLOYMENT_PROFILES: effectiveMatrixItem.supportedDeploymentProfiles.join(',') }
       : {}),
     ...(effectiveMatrixItem.runtimeTarget ? { SDKWORK_RUNTIME_TARGET: effectiveMatrixItem.runtimeTarget } : {}),
+    ...(effectiveMatrixItem.targetPlatform ? { SDKWORK_TARGET_PLATFORM: effectiveMatrixItem.targetPlatform } : {}),
+    ...(effectiveMatrixItem.clientArchitecture
+      ? { SDKWORK_CLIENT_ARCHITECTURE: effectiveMatrixItem.clientArchitecture }
+      : {}),
     SDKWORK_PACKAGE_ARCHITECTURE: effectiveMatrixItem.architecture,
     SDKWORK_PACKAGE_FORMAT: effectiveMatrixItem.format,
     SDKWORK_PACKAGE_ID: effectiveMatrixItem.packageId,
@@ -2582,6 +2648,8 @@ function defaultTargetsForProfile(profile) {
         profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'desktop',
+        targetPlatform: 'windows',
+        clientArchitecture: 'tauri',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -2594,6 +2662,8 @@ function defaultTargetsForProfile(profile) {
         profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'desktop',
+        targetPlatform: 'windows',
+        clientArchitecture: 'tauri',
         profile: 'desktop',
         platform: 'windows',
         architecture: 'x64',
@@ -2606,6 +2676,8 @@ function defaultTargetsForProfile(profile) {
         profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'desktop',
+        targetPlatform: 'macos',
+        clientArchitecture: 'tauri',
         profile: 'desktop',
         platform: 'macos',
         architecture: 'arm64',
@@ -2622,6 +2694,8 @@ function defaultTargetsForProfile(profile) {
         profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'flutter-android',
+        targetPlatform: 'android',
+        clientArchitecture: 'flutter',
         profile: 'mobile',
         platform: 'android',
         architecture: 'arm64',
@@ -2634,6 +2708,8 @@ function defaultTargetsForProfile(profile) {
         profileBinding: 'fixed',
         deploymentProfile: 'standalone',
         runtimeTarget: 'flutter-ios',
+        targetPlatform: 'ios',
+        clientArchitecture: 'flutter',
         profile: 'mobile',
         platform: 'ios',
         architecture: 'universal',
@@ -2690,6 +2766,8 @@ function defaultTargetsForProfile(profile) {
         profileBinding: 'fixed',
         deploymentProfile: 'cloud',
         runtimeTarget: 'browser',
+        targetPlatform: 'web',
+        clientArchitecture: 'pc-web',
         profile: 'browser',
         platform: 'web',
         architecture: 'universal',
@@ -2738,6 +2816,8 @@ function defaultTargetsForProfile(profile) {
         profileBinding: 'fixed',
         deploymentProfile: 'cloud',
         runtimeTarget: 'mini-program',
+        targetPlatform: 'mp-weixin',
+        clientArchitecture: 'mini-program',
         profile: 'mini-program',
         platform: 'mp-weixin',
         architecture: 'universal',
@@ -3166,6 +3246,7 @@ if (invokedPath && sameModulePath(invokedPath, WORKFLOW_CLI_PATH)) {
 export {
   SCHEMA_VERSION,
   SUPPORTED_ARCHITECTURES,
+  SUPPORTED_CLIENT_ARCHITECTURES,
   SUPPORTED_DEPLOYMENT_PROFILES,
   SUPPORTED_PROFILE_BINDINGS,
   SUPPORTED_FORMATS,

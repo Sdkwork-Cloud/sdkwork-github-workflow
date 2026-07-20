@@ -83,9 +83,37 @@ on:
         required: false
         type: boolean
         default: false
+      deploy_approval_ref:
+        description: Protected-environment approval or change-record reference for deploy apply.
+        required: false
+        type: string
+        default: ''
+      deploy_rollback_target:
+        description: Immutable rollback target or approved forward-fix boundary for deploy apply.
+        required: false
+        type: string
+        default: ''
     secrets:
       SDKWORK_RELEASE_TOKEN:
         description: Token used for private dependency checkouts and optional release upload.
+        required: false
+      SDKWORK_RELEASE_SIGNING_PRIVATE_KEY:
+        description: PEM private key used by application detached-signature lifecycle hooks.
+        required: false
+      SDKWORK_RELEASE_SIGNING_PRIVATE_KEY_PASSWORD:
+        description: Optional password for the detached-signature private key.
+        required: false
+      SDKWORK_ANDROID_KEYSTORE_BASE64:
+        description: Base64-encoded Android release keystore.
+        required: false
+      SDKWORK_ANDROID_KEYSTORE_PASSWORD:
+        description: Android release keystore password.
+        required: false
+      SDKWORK_ANDROID_KEY_ALIAS:
+        description: Android release key alias.
+        required: false
+      SDKWORK_ANDROID_KEY_PASSWORD:
+        description: Android release key password.
         required: false
 
 permissions:
@@ -240,12 +268,20 @@ jobs:
       SDKWORK_DEPLOYMENT_PROFILE: ${{ matrix.deploymentProfile }}
       SDKWORK_SUPPORTED_DEPLOYMENT_PROFILES: ${{ join(matrix.supportedDeploymentProfiles, ',') }}
       SDKWORK_RUNTIME_TARGET: ${{ matrix.runtimeTarget }}
+      SDKWORK_TARGET_PLATFORM: ${{ matrix.targetPlatform }}
+      SDKWORK_CLIENT_ARCHITECTURE: ${{ matrix.clientArchitecture }}
       SDKWORK_PACKAGE_PROFILE: ${{ matrix.profile }}
       SDKWORK_PACKAGE_PLATFORM: ${{ matrix.platform }}
       SDKWORK_PACKAGE_ARCHITECTURE: ${{ matrix.architecture }}
       SDKWORK_PACKAGE_VARIANT: ${{ matrix.variant }}
       SDKWORK_PACKAGE_FORMAT: ${{ matrix.format }}
       GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
+      SDKWORK_RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.SDKWORK_RELEASE_SIGNING_PRIVATE_KEY }}
+      SDKWORK_RELEASE_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.SDKWORK_RELEASE_SIGNING_PRIVATE_KEY_PASSWORD }}
+      SDKWORK_ANDROID_KEYSTORE_BASE64: ${{ secrets.SDKWORK_ANDROID_KEYSTORE_BASE64 }}
+      SDKWORK_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SDKWORK_ANDROID_KEYSTORE_PASSWORD }}
+      SDKWORK_ANDROID_KEY_ALIAS: ${{ secrets.SDKWORK_ANDROID_KEY_ALIAS }}
+      SDKWORK_ANDROID_KEY_PASSWORD: ${{ secrets.SDKWORK_ANDROID_KEY_PASSWORD }}
     steps:
       - name: Checkout application source
         uses: actions/checkout@v4
@@ -628,6 +664,8 @@ jobs:
       SDKWORK_PACKAGE_FORMAT: ${{ matrix.format }}
       SDKWORK_DEPLOY_ENVIRONMENT: ${{ matrix.environment }}
       SDKWORK_DEPLOY_URL: ${{ matrix.url }}
+      SDKWORK_DEPLOY_APPROVAL_REF: ${{ inputs.deploy_approval_ref }}
+      SDKWORK_DEPLOY_ROLLBACK_TARGET: ${{ inputs.deploy_rollback_target }}
       SDKWORK_ARTIFACT_EVIDENCE_PATH: ${{ format('.sdkwork/artifacts/{0}', matrix.artifactEvidencePath) }}
       GH_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN || github.token }}
     steps:

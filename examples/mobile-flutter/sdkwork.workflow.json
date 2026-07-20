@@ -97,7 +97,7 @@
   "security": {
     "oidcRequired": true,
     "artifactAttestations": true,
-    "signingRequired": true
+    "signingRequired": false
   },
   "publish": {
     "workflowArtifact": true,

@@ -203,6 +203,99 @@ test('enforces required signing and SBOM security lifecycle policies', () => {
   assert.ok(issues.some((issue) => issue.includes('targets[1].signing cannot be false')));
 });
 
+test('rejects logging-only signing and SBOM placeholders when evidence is required', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'placeholder-security', repository: 'Org/placeholder-security' },
+    release: { artifactPrefix: 'placeholder-security' },
+    lifecycle: {
+      sign: [{ shell: 'pwsh', run: 'Write-Host "signing is configured elsewhere"' }],
+      sbom: [{ shell: 'node', run: 'console.log("SBOM hook")' }],
+    },
+    targets: [
+      {
+        id: 'linux-x64-standalone-server-tar-gz',
+        profileBinding: 'fixed',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+    ],
+    security: { signingRequired: true, sbomRequired: true },
+  };
+
+  const issues = validateWorkflowConfig(config);
+  assert.ok(issues.some((issue) => issue.includes('executable lifecycle.sign')));
+  assert.ok(issues.some((issue) => issue.includes('executable lifecycle.sbom')));
+});
+
+test('projects explicit client platform and architecture axes into lifecycle plans', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'client-axes', repository: 'Org/client-axes' },
+    release: { artifactPrefix: 'client-axes' },
+    lifecycle: { package: [{ run: 'pnpm package' }] },
+    targets: [
+      {
+        id: 'android-universal-dual-mobile-flutter-aab',
+        profileBinding: 'runtime-configurable',
+        supportedDeploymentProfiles: ['standalone', 'cloud'],
+        defaultDeploymentProfile: 'standalone',
+        runtimeTarget: 'flutter-android',
+        targetPlatform: 'android',
+        clientArchitecture: 'flutter',
+        profile: 'mobile',
+        platform: 'android',
+        architecture: 'universal',
+        variant: 'flutter',
+        formats: ['aab'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/mobile/*.aab'],
+      },
+    ],
+  };
+
+  assert.deepEqual(validateWorkflowConfig(config), []);
+  const matrix = createPackageMatrix(config, { deploymentProfile: 'cloud' });
+  assert.equal(matrix.include[0].targetPlatform, 'android');
+  assert.equal(matrix.include[0].clientArchitecture, 'flutter');
+  const plan = createLifecyclePlan(config, { phase: 'package', matrixItem: matrix.include[0] });
+  assert.equal(plan.steps[0].env.SDKWORK_TARGET_PLATFORM, 'android');
+  assert.equal(plan.steps[0].env.SDKWORK_CLIENT_ARCHITECTURE, 'flutter');
+});
+
+test('rejects inconsistent or incomplete client axes', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'bad-client-axes', repository: 'Org/bad-client-axes' },
+    release: { artifactPrefix: 'bad-client-axes' },
+    targets: [
+      {
+        id: 'web-universal-cloud-browser-zip',
+        profileBinding: 'fixed',
+        deploymentProfile: 'cloud',
+        runtimeTarget: 'browser',
+        targetPlatform: 'h5',
+        profile: 'browser',
+        platform: 'web',
+        architecture: 'universal',
+        formats: ['zip'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.zip'],
+      },
+    ],
+  };
+
+  const issues = validateWorkflowConfig(config);
+  assert.ok(issues.some((issue) => issue.includes('targetPlatform must equal platform')));
+  assert.ok(issues.some((issue) => issue.includes('targetPlatform and clientArchitecture')));
+});
+
 test('rejects unknown workflow config properties so schema and planner stay aligned', () => {
   const config = {
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
@@ -417,7 +510,11 @@ test('plans runtime-configurable client artifacts once with a dual package id an
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
     app: { id: 'dual-client', repository: 'Org/dual-client' },
     release: { artifactPrefix: 'dual-client' },
-    lifecycle: { package: [{ run: 'echo package' }], deploy: [{ run: 'echo deploy' }] },
+    lifecycle: {
+      package: [{ run: 'echo package' }],
+      deploy: [{ run: 'echo deploy' }],
+      publish: [{ run: 'node -e "process.exit(0)"' }],
+    },
     targets: [
       {
         id: 'windows-x64-dual-desktop-msi',
@@ -1941,6 +2038,9 @@ test('supports tablet package targets as first-class profile and platforms', () 
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
     app: { id: 'tablet-demo', repository: 'Org/tablet-demo' },
     release: { artifactPrefix: 'tablet-demo' },
+    lifecycle: {
+      publish: [{ run: 'node -e "process.exit(0)"' }],
+    },
     targets: [
       {
         id: 'ipados-universal-standalone-tablet-ipa',
@@ -2395,6 +2495,10 @@ test('creates deployment matrix from declared environments and selected package 
     schemaVersion: '2026-06-06.sdkwork.workflow.v1',
     app: { id: 'demo', repository: 'Org/demo' },
     release: { artifactPrefix: 'demo' },
+    lifecycle: {
+      deploy: [{ run: 'node -e "process.exit(0)"' }],
+      publish: [{ run: 'node -e "process.exit(0)"' }],
+    },
     targets: [
       {
         id: 'linux-x64-standalone-server-tar-gz',
@@ -2533,6 +2637,39 @@ test('rejects deployments that cannot bind to any package target', () => {
 
   const issues = validateWorkflowConfig(config);
   assert.ok(issues.some((issue) => issue.includes('deployments[0] does not match any package target')));
+});
+
+test('rejects configured deployments without a deployment lifecycle implementation', () => {
+  const config = {
+    schemaVersion: '2026-06-06.sdkwork.workflow.v1',
+    app: { id: 'missing-deploy-lifecycle', repository: 'Org/missing-deploy-lifecycle' },
+    release: { artifactPrefix: 'missing-deploy-lifecycle' },
+    targets: [
+      {
+        id: 'linux-x64-standalone-server-tar-gz',
+        profileBinding: 'fixed',
+        deploymentProfile: 'standalone',
+        runtimeTarget: 'server',
+        profile: 'server',
+        platform: 'linux',
+        architecture: 'x64',
+        formats: ['tar.gz'],
+        runner: 'ubuntu-24.04',
+        outputGlobs: ['dist/*.tar.gz'],
+      },
+    ],
+    deployments: [
+      {
+        id: 'production',
+        environment: 'production',
+        targetId: 'linux-x64-standalone-server-tar-gz',
+        lifecycle: 'deploy',
+      },
+    ],
+  };
+
+  const issues = validateWorkflowConfig(config);
+  assert.ok(issues.some((issue) => issue.includes('require executable lifecycle.deploy steps')));
 });
 
 test('creates lifecycle command plan with target environment', () => {
