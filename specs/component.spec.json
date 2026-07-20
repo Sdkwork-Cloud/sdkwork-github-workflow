@@ -50,7 +50,7 @@
   },
   "verification": {
     "commands": [
-      "pnpm validate",
+      "pnpm check",
       "node ../sdkwork-specs/tools/verify-repo.mjs --root ."
     ]
   }

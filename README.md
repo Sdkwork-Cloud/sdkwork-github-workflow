@@ -116,8 +116,8 @@ Add `sdkwork.workflow.json` to the application repository:
   "lifecycle": {
     "install": [{ "run": "pnpm install --frozen-lockfile" }],
     "build": [{ "run": "pnpm build" }],
-    "package": [{ "run": "pnpm package -- --package-id $SDKWORK_PACKAGE_ID" }],
-    "validate": [{ "run": "pnpm package:validate -- --package-id $SDKWORK_PACKAGE_ID" }]
+    "package": [{ "run": "pnpm release:package -- --package-id $SDKWORK_PACKAGE_ID" }],
+    "validate": [{ "run": "pnpm release:validate -- --package-id $SDKWORK_PACKAGE_ID" }]
   },
   "targets": [
     {
