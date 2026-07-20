@@ -1,0 +1,9 @@
+{
+  "kind": "sdkwork.api.assembly",
+  "schemaVersion": 1,
+  "applicationCode": "github-workflow",
+  "apiMode": "none",
+  "packageName": "sdkwork-api-github-workflow-assembly",
+  "crateDir": "crates/sdkwork-api-github-workflow-assembly",
+  "routeCrates": []
+}

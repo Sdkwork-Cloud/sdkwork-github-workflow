@@ -1,0 +1,13 @@
+[package]
+name = "sdkwork-api-github-workflow-assembly"
+edition = "2021"
+version = "0.1.0"
+description = "Generated API assembly for sdkwork-github-workflow application HTTP plane."
+
+[lib]
+name = "sdkwork_api_github_workflow_assembly"
+path = "src/lib.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread"] }
